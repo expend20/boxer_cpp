@@ -15,7 +15,7 @@
 
 #define PRINTF printf
 #define VSNPRINTF vsnprintf
-#define ABORT exit
+#define ABORT abort
 
 #endif // DR_BUILD
 
@@ -54,10 +54,11 @@ namespace say {
   #define SAY_INFO(x, ...)    say::say(say::SayLevelInfo,    "[+] " __FILE__ " :" S_(__LINE__) " " x, __VA_ARGS__)
   #define SAY_WARN(x, ...)    say::say(say::SayLevelWarning, "[~] " __FILE__ " :" S_(__LINE__) " " x, __VA_ARGS__)
   #define SAY_ERROR(x, ...)   say::say(say::SayLevelError,   "[!] " __FILE__ " :" S_(__LINE__) " " x, __VA_ARGS__)
-  #define SAY_FATAL(x, ...)   {say::say(say::SayLevelError,   "[!!!] " __FILE__ " :" S_(__LINE__) " " x, __VA_ARGS__); ABORT(-1);}
+  #define SAY_FATAL(x, ...)   {say::say(say::SayLevelError,   "[!!!] " __FILE__ " :" S_(__LINE__) " " x, __VA_ARGS__); ABORT();}
 
   #define SAY_INFO_RAW(x, ...)   say::say(say::SayLevelInfo,   x, __VA_ARGS__)
   #define SAY_DEBUG_RAW(x, ...)   say::say(say::SayLevelDebug,   x, __VA_ARGS__)
+
 
 #else
 
@@ -66,7 +67,7 @@ namespace say {
   #define SAY_INFO(x, ...)    say::say(say::SayLevelInfo,    "[+] " x, __VA_ARGS__)
   #define SAY_WARN(x, ...)    say::say(say::SayLevelWarning, "[~] " x, __VA_ARGS__)
   #define SAY_ERROR(x, ...)   say::say(say::SayLevelError,   "[!] " x, __VA_ARGS__)
-  #define SAY_FATAL(x, ...)   {say::say(say::SayLevelError,   "[!!!] " x, __VA_ARGS__); ABORT(-1);}
+  #define SAY_FATAL(x, ...)   {say::say(say::SayLevelError,   "[!!!] " x, __VA_ARGS__); ABORT();}
 
   #define SAY_INFO_RAW(x, ...)   say::say(say::SayLevelInfo,   x, __VA_ARGS__)
   #define SAY_DEBUG_RAW(x, ...)   say::say(say::SayLevelDebug,   x, __VA_ARGS__)
@@ -77,5 +78,10 @@ namespace say {
 #define LOG_DEBUG SAY_DEBUG
 #define LOG_WARN  SAY_WARN
 #define LOG_ERROR SAY_ERROR
+#define LOG_FATAL SAY_FATAL
+
+#define ASSERT(x) \
+    if (!(x)) SAY_FATAL("Assertion failed %s %d: %s", __FILE__, __LINE__, STRINGIFY(x));
+
 
 #endif // SAY_INCLUDED

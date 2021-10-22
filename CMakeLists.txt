@@ -12,6 +12,10 @@ add_library(boxer_lib
     src/Say.cpp
     src/args.cpp
     src/common.cpp
+    src/tools.cpp
+    src/instrumenter.cpp
+    src/pe.cpp
+    src/mem_tool.cpp
     )
 
 add_executable(boxer

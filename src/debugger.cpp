@@ -5,7 +5,7 @@
 #include <strsafe.h>
 #include <psapi.h>
 
-Debugger::Debugger(const char* cmd_line, 
+debugger::debugger(const char* cmd_line, 
         uint32_t flags)
 {
     STARTUPINFO si = {0};
@@ -28,20 +28,25 @@ Debugger::Debugger(const char* cmd_line,
                 &si,
                 &m_pi)
        ){
-        SAY_FATAL("Can't create process: %s, %s",
+        SAY_FATAL("Can't create process: %s, %s\n",
                 cmd_line,
                 helper::getLastErrorAsString().c_str());
     }
 
+    SAY_INFO("Process %s created %d:%d\n", cmd_line, m_pi.dwProcessId, 
+            m_pi.dwThreadId);
     CloseHandle(m_pi.hProcess);
+    m_pi.hProcess = OpenProcess(PROCESS_ALL_ACCESS, false, m_pi.dwProcessId);
+    ASSERT(m_pi.hProcess);
+
 };
 
-Debugger::~Debugger() {
+debugger::~debugger() {
     CloseHandle(m_pi.hProcess);
     CloseHandle(m_pi.hThread);
 }
 
-void Debugger::Run(size_t steps) {
+void debugger::run(size_t steps) {
 
     //if (!m_handler) SAY_FATAL("Run attempt without handler registered");
 
@@ -52,7 +57,7 @@ void Debugger::Run(size_t steps) {
         m_events_count++;
 
         auto continue_status =
-            m_handler->HandleDebugEvent(&m_debug_event, this);
+            m_handler->handle_debug_event(&m_debug_event, this);
 
         ContinueDebugEvent(m_debug_event.dwProcessId,
                 m_debug_event.dwThreadId,

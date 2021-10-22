@@ -4,32 +4,32 @@
 #include <stdint.h>
 #include <windows.h>
 
-class Debugger;
+class debugger;
 
-struct IDebugHandler {
-    virtual ~IDebugHandler() = default;
-    virtual DWORD HandleDebugEvent(DEBUG_EVENT* dbg_event,
-            Debugger* debuger) = 0;
+struct idebug_handler {
+    virtual ~idebug_handler() = default;
+    virtual DWORD handle_debug_event(DEBUG_EVENT* dbg_event,
+            debugger* debuger) = 0;
 };
 
-class Debugger {
+class debugger {
     public:
-        Debugger(const char* cmd_line, uint32_t flags);
+        debugger(const char* cmd_line, uint32_t flags);
 
-        ~Debugger();
+        ~debugger();
 
-        void Run(size_t steps);
+        void run(size_t steps);
 
-        void RegisterHandler(IDebugHandler* handler) { m_handler = handler; };
-        const PROCESS_INFORMATION* GetProcInfo() { return &m_pi; };
-        size_t GetEventsCount() { return m_events_count; };
-        void Stop() { m_stopped = true; };
+        void register_handler(idebug_handler* handler) { m_handler = handler; };
+        const PROCESS_INFORMATION* get_proc_info() { return &m_pi; };
+        size_t get_events_count() { return m_events_count; };
+        void stop() { m_stopped = true; };
 
     private:
         PROCESS_INFORMATION m_pi = {0};
         size_t m_events_count = 0;
         DEBUG_EVENT m_debug_event = {0};
-        IDebugHandler* m_handler = 0;
+        idebug_handler* m_handler = 0;
         bool m_stopped = false;
 
 };
