@@ -13,7 +13,7 @@ int main(int argc, const char** argv) {
     InitLogs(argc, argv);
     SAY_INFO("Hello %s", "world\n");
 
-    auto dbg = debugger("..\\program.exe", 
+    auto dbg = debugger("program.exe", 
         DEBUG_PROCESS | DEBUG_ONLY_THIS_PROCESS);
 
     auto ins = instrumenter();

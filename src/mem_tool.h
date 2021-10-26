@@ -23,7 +23,7 @@ class mem_tool {
         size_t get_tgt_by_offset(size_t offset);
         size_t get_tgt_by_local(size_t localAddress);
 
-        bool   is_in_range(size_t addr);
+        bool   is_in_rage_remote(size_t addr);
 
         size_t get_bytes_left_by_addr(size_t addr);
 
@@ -33,7 +33,7 @@ class mem_tool {
         size_t addr_loc();
         size_t addr_loc_end();
         size_t size();
-        size_t addr_tgt();
+        size_t addr_remote();
 
         size_t change_protection(DWORD prot);
         size_t make_writeable();
@@ -44,7 +44,7 @@ class mem_tool {
     private:
         std::vector<uint8_t> m_data;
         HANDLE               m_proc = 0;
-        size_t               m_addr = 0;
+        size_t               m_addr_remote = 0;
         DWORD                m_oldProt = 0;
 
 };

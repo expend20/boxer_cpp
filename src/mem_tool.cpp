@@ -3,8 +3,8 @@
 
 #include <memoryapi.h>
 
-bool mem_tool::is_in_range(size_t addr){
-    if (addr >= m_addr && addr < (m_addr + m_data.size())) {
+bool mem_tool::is_in_rage_remote(size_t addr){
+    if (addr >= m_addr_remote && addr < (m_addr_remote + m_data.size())) {
         return true;
     } else {
         return false;
@@ -12,17 +12,17 @@ bool mem_tool::is_in_range(size_t addr){
 }
 
 size_t mem_tool::get_bytes_left_by_addr(size_t addr) {
-    ASSERT(addr >= m_addr);
-    if (addr - m_addr >= m_data.size()) __debugbreak();
-    ASSERT(addr - m_addr < m_data.size());
-    return m_addr + m_data.size() - addr;
+    ASSERT(addr >= m_addr_remote);
+    if (addr - m_addr_remote >= m_data.size()) __debugbreak();
+    ASSERT(addr - m_addr_remote < m_data.size());
+    return m_addr_remote + m_data.size() - addr;
 }
 
 size_t mem_tool::get_mem_by_addr(size_t addr) {
-    ASSERT(addr >= m_addr);
-    ASSERT(addr - m_addr < m_data.size());
-    if (addr >= m_addr && (addr - m_addr < m_data.size())) {
-        return (size_t)&m_data[addr - m_addr];
+    ASSERT(addr >= m_addr_remote);
+    ASSERT(addr - m_addr_remote < m_data.size());
+    if (addr >= m_addr_remote && (addr - m_addr_remote < m_data.size())) {
+        return (size_t)&m_data[addr - m_addr_remote];
     } else {
         return 0;
     }
@@ -30,7 +30,7 @@ size_t mem_tool::get_mem_by_addr(size_t addr) {
 
 size_t mem_tool::get_tgt_by_offset(size_t offset){
     ASSERT(offset < m_data.size());
-    return (size_t)(m_addr + offset);
+    return (size_t)(m_addr_remote + offset);
 }
 
 size_t mem_tool::get_tgt_by_local(size_t loc){
@@ -45,8 +45,8 @@ size_t mem_tool::get_mem_by_offset(size_t offset) {
     return (size_t)&m_data[offset];
 }
 
-size_t mem_tool::addr_tgt() {
-    return m_addr;
+size_t mem_tool::addr_remote() {
+    return m_addr_remote;
 }
 size_t mem_tool::size() {
     return m_data.size();
@@ -63,10 +63,10 @@ size_t mem_tool::addr_loc_end() {
 void mem_tool::read() {
     size_t rw = 0;
 
-    if (!ReadProcessMemory(m_proc, (void*)m_addr, &m_data[0], m_data.size(),
+    if (!ReadProcessMemory(m_proc, (void*)m_addr_remote, &m_data[0], m_data.size(),
                 &rw)){
         SAY_FATAL("can't read process memory %x %p %x\n",
-                m_proc, m_addr, m_data.size());
+                m_proc, m_addr_remote, m_data.size());
     }
 
     ASSERT(rw == m_data.size());
@@ -80,7 +80,7 @@ mem_tool::mem_tool(HANDLE process, size_t data, size_t len) {
     ASSERT(data);
     ASSERT(len);
 
-    m_addr = data;
+    m_addr_remote = data;
     m_proc = process;
 
     m_data.resize(len);
@@ -91,10 +91,10 @@ mem_tool::mem_tool(HANDLE process, size_t data, size_t len) {
 void mem_tool::commit() {
     size_t rw = 0;
 
-    if (!WriteProcessMemory(m_proc, (void*)m_addr, &m_data[0], m_data.size(),
+    if (!WriteProcessMemory(m_proc, (void*)m_addr_remote, &m_data[0], m_data.size(),
                 &rw)){
         SAY_FATAL("can't write process memory %x %p %x\n",
-                m_proc, m_addr, m_data.size());
+                m_proc, m_addr_remote, m_data.size());
     }
 
     ASSERT(rw == m_data.size());
@@ -106,15 +106,15 @@ size_t mem_tool::change_protection(DWORD prot){
     auto sz = m_data.size();
     ASSERT(sz != 0);
 
-    if (!VirtualProtectEx(m_proc, (void*)m_addr, m_data.size(),
+    if (!VirtualProtectEx(m_proc, (void*)m_addr_remote, m_data.size(),
                 prot, &m_oldProt)) {
-        SAY_FATAL("Can't protect memory %p:%x", m_addr,
+        SAY_FATAL("Can't protect memory %p:%x", m_addr_remote,
                 m_data.size());
         return -1;
     } else {
 
         SAY_DEBUG("section %p:%x changed protection from %x to %x\n",
-                m_addr, m_data.size(), m_oldProt, prot);
+                m_addr_remote, m_data.size(), m_oldProt, prot);
     }
 
     return 0;
@@ -124,9 +124,9 @@ size_t mem_tool::restore_prev_protection(){
     DWORD newProt = 0;
 
     SAY_DEBUG("restoring section protection %x %p:%p\n", m_oldProt,
-            m_addr, m_data.size());
+            m_addr_remote, m_data.size());
 
-    BOOL res = VirtualProtect((void*)m_addr, m_data.size(), m_oldProt,
+    BOOL res = VirtualProtect((void*)m_addr_remote, m_data.size(), m_oldProt,
             &newProt);
     ASSERT(res);
 

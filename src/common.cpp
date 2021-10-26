@@ -11,9 +11,6 @@
 #include <filesystem>
 #include <sys/stat.h>
 
-// FIXME:
-#define assert(x) {};
-
 namespace helper {
 
 size_t writeFile(const char *filePath, const char *fileData, size_t fileLen,
@@ -160,8 +157,8 @@ std::vector<uint8_t> readFile(const char *filePath)
 
     size_t fileSize = 0;
     auto data = readAllocFile(filePath, &fileSize);
-    assert(fileSize);
-    assert(data);
+    ASSERT(fileSize);
+    ASSERT(data);
 
     std::vector<uint8_t> res;
     res.resize(fileSize);

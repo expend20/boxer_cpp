@@ -1,9 +1,104 @@
 #include "tools.h"
+#include "common.h"
 #include "say.h"
 
 #include <map>
 
+#include <DbgHelp.h>
+
 namespace tools {
+
+    void write_minidump(const char* path, HANDLE proc, DWORD pid) 
+    {
+        auto hfile = CreateFileA(path,
+               GENERIC_READ | GENERIC_WRITE,
+               FILE_SHARE_READ | FILE_SHARE_WRITE,
+               NULL,
+               CREATE_ALWAYS,
+               0,
+               0);
+        ASSERT(hfile != INVALID_HANDLE_VALUE);
+        auto r = MiniDumpWriteDump(proc, 
+                pid,
+                hfile,
+                MINIDUMP_TYPE::MiniDumpWithFullMemory,
+                NULL,
+                NULL,
+                NULL);
+        ASSERT(r);
+        CloseHandle(hfile);
+    }
+
+    void write_minidump(const char* path, 
+            PROCESS_INFORMATION* pi,
+            EXCEPTION_RECORD* ex_rec) 
+    {
+        CONTEXT ctx;
+        ctx.ContextFlags = CONTEXT_ALL;
+        auto b = GetThreadContext(pi->hThread, &ctx);
+        ASSERT(b);
+
+        auto hfile = CreateFileA(path,
+               GENERIC_READ | GENERIC_WRITE,
+               FILE_SHARE_READ | FILE_SHARE_WRITE,
+               NULL,
+               CREATE_ALWAYS,
+               0,
+               0);
+        ASSERT(hfile != INVALID_HANDLE_VALUE);
+
+        EXCEPTION_POINTERS ex_poi;
+        ex_poi.ExceptionRecord = ex_rec;
+        ex_poi.ContextRecord = &ctx;
+
+        MINIDUMP_EXCEPTION_INFORMATION ex_info;
+        ex_info.ExceptionPointers = &ex_poi;
+        ex_info.ThreadId = pi->dwThreadId;
+        ex_info.ClientPointers = true;
+        auto r = MiniDumpWriteDump(pi->hProcess, 
+                pi->dwProcessId,
+                hfile,
+                MINIDUMP_TYPE::MiniDumpWithFullMemory,
+                NULL,//&ex_info,
+                NULL,
+                NULL);
+        ASSERT(r);
+        CloseHandle(hfile);
+
+    }
+
+
+    size_t alloc_after_pe_image(
+            HANDLE proc,
+            size_t module_end, 
+            size_t data_size,
+            DWORD permissions) 
+    {
+        //SAY_DEBUG("Allocating 0x%x bytes just after %p in process %d",
+        //       data_size, module_end, proc);
+        size_t new_alloc = 0;
+        for (size_t ptr = module_end; ptr <= module_end + 0x10000;
+                ptr += 0x1000) {
+            //SAY_DEBUG("Trying addr %p...\n", ptr);
+            new_alloc = (size_t)VirtualAllocEx(
+                    proc,
+                    (void*)ptr, 
+                    data_size,
+                    MEM_COMMIT | MEM_RESERVE, 
+                    permissions);
+            if (!new_alloc) {
+                //SAY_WARN("Can't alloc at %p, %s\n", 
+                //        ptr, helper::getLastErrorAsString().c_str());
+                continue;
+            } else {
+                SAY_DEBUG("Memory near module is allocated at %p:%x, requested "
+                        "from %p (diff = %p)\n",
+                        ptr, data_size, module_end, ptr - module_end);
+                break;
+            }
+        }
+        return new_alloc;
+    }
 
     std::string get_path_by_handle(HANDLE handle) 
     {
@@ -109,5 +204,20 @@ namespace tools {
             return findRes->second;
         }
     }
+
+    void update_thread_rip(HANDLE thread, size_t rip)
+    {
+        CONTEXT ctx;
+        ctx.ContextFlags = CONTEXT_ALL;
+        auto b = GetThreadContext(thread, &ctx);
+        ASSERT(b);
+
+        SAY_INFO("Thread's current rip = %p (set to %p), rcx = %p, rdx = %p\n", 
+                ctx.Rip, rip, ctx.Rcx, ctx.Rdx);
+        ctx.Rip = rip;
+        b = SetThreadContext(thread, &ctx);
+        ASSERT(b);
+    }
+
 };
 

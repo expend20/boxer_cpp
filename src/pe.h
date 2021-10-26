@@ -57,7 +57,7 @@ namespace pehelper {
             size_t m_remote_addr = 0;
             size_t m_remote_size = 0;
             HANDLE m_process = INVALID_HANDLE_VALUE;
-            IMAGE_NT_HEADERS *m_ntHeaders = NULL;
+            IMAGE_NT_HEADERS *m_nt_headers = NULL;
             mem_tool m_img_header;
             std::vector<section> m_sections;
             std::vector<runtime_function> m_exception_funcs;
@@ -69,7 +69,7 @@ namespace pehelper {
             pe(HANDLE process, size_t data);
 
             size_t            get_remote_addr(){ return m_remote_addr; };
-            IMAGE_NT_HEADERS* get_nt_headers(){ return m_ntHeaders; };
+            IMAGE_NT_HEADERS* get_nt_headers(){ return m_nt_headers; };
             mem_tool*         get_headers(){ return &m_img_header; };
 
             size_t            get_section_count();

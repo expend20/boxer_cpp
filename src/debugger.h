@@ -21,7 +21,7 @@ class debugger {
         void run(size_t steps);
 
         void register_handler(idebug_handler* handler) { m_handler = handler; };
-        const PROCESS_INFORMATION* get_proc_info() { return &m_pi; };
+        PROCESS_INFORMATION* get_proc_info() { return &m_pi; };
         size_t get_events_count() { return m_events_count; };
         void stop() { m_stopped = true; };
 

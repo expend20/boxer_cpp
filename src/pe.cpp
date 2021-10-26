@@ -118,7 +118,7 @@ void pehelper::pe::extract_imports(){
 
 void pehelper::pe::extract_exception_directory(){
 
-    // FIXME: example of using RtlLookupFunction Entry
+    // TODO: example of using RtlLookupFunction Entry
     // >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
     /*
        {
@@ -277,7 +277,7 @@ void pehelper::pe::extract_sections() {
     ASSERT(pe->FileHeader.Machine == IMAGE_FILE_MACHINE_AMD64);
     auto sect = (IMAGE_SECTION_HEADER*)((size_t)pe + sizeof(pe->Signature) +
             sizeof(pe->FileHeader) + pe->FileHeader.SizeOfOptionalHeader);
-    m_ntHeaders = pe;
+    m_nt_headers = pe;
 
     while( sect->VirtualAddress ) {
 

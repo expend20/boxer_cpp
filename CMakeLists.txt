@@ -16,6 +16,7 @@ add_library(boxer_lib
     src/instrumenter.cpp
     src/pe.cpp
     src/mem_tool.cpp
+    src/translator.cpp
     )
 
 add_executable(boxer
@@ -25,4 +26,13 @@ add_executable(boxer
 
 target_link_libraries(boxer
     boxer_lib
+    "dbghelp.lib"
+    )
+
+enable_language(ASM_NASM)
+add_executable(program
+    src/program.asm
+    )
+set_property(TARGET program 
+    APPEND_STRING PROPERTY LINK_FLAGS " /ENTRY:WinMain"
     )

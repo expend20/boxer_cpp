@@ -3,16 +3,18 @@
 
 #include "debugger.h"
 #include "pe.h"
+#include "translator.h"
 
 #include <map>
 #include <string>
 #include <vector>
 
-struct instrumentor_stats {
+struct instrumenter_stats {
     size_t dbg_callbaks;
     size_t exceptions;
     size_t breakpoints;
     size_t avs;
+    size_t translator_called;
 };
 
 class instrumenter: public idebug_handler {
@@ -32,11 +34,16 @@ class instrumenter: public idebug_handler {
         bool should_handle_dep_av(size_t addr);
 
     private:
-        instrumentor_stats m_stats = {0};
-        std::map<size_t, std::string> m_remote_modules_list;
+        instrumenter_stats m_stats = {0};
         std::vector<std::string> m_modules_to_instrument;
         std::vector<pehelper::pe> m_modules;
         std::vector<pehelper::section*> m_sections_patched;
+        std::map<size_t, std::string> m_remote_modules_list;
+        std::map<size_t, mem_tool> m_base_to_inst;
+        std::map<size_t, mem_tool> m_base_to_cov;
+        std::map<size_t, mem_tool> m_base_to_metadata;
+        std::map<size_t, translator> m_base_to_translator;
+
         debugger* m_debugger = NULL;
 
 };
