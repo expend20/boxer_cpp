@@ -15,6 +15,7 @@ struct instrumenter_stats {
     size_t breakpoints;
     size_t avs;
     size_t translator_called;
+    size_t rip_redirections;
 };
 
 class instrumenter: public idebug_handler {

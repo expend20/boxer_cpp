@@ -12,7 +12,8 @@ bool instrumenter::should_handle_dep_av(size_t addr)
         SAY_DEBUG("addr %p ? %p %p\n", addr, start, end);
         if (addr >= start && addr < end) {
 
-            SAY_ERROR("That's we patched the code!\n");
+            m_stats.rip_redirections++;
+            SAY_DEBUG("That's we patched the code\n");
             // That's we've patched the code, let's check if it's already 
             // instrumented
             size_t mod_base = 0;
@@ -28,11 +29,14 @@ bool instrumenter::should_handle_dep_av(size_t addr)
             ASSERT(trans);
             ASSERT(trans->m_inst_code && trans->m_cov_buf && trans->m_metadata);
 
-            size_t inst_addr = trans->remote_to_inst(addr);
+            size_t inst_addr = trans->remote_orig_to_inst_bb(addr);
             if (!inst_addr) { 
-                SAY_ERROR("Address not found, instrumenting...\n");
+                SAY_DEBUG("Address not found, instrumenting...\n");
                 inst_addr = trans->instrument(addr);
                 ASSERT(inst_addr);
+                m_stats.translator_called++;
+            }
+            else {
             }
 
             // TODO: debug only branch
@@ -47,6 +51,7 @@ bool instrumenter::should_handle_dep_av(size_t addr)
 
             tools::update_thread_rip(m_debugger->get_proc_info()->hThread,
                     inst_addr);
+
             // TODO: realizy if we really need that
             //r = FlushInstructionCache(
             //        m_debugger->get_proc_info()->hProcess, (void*)(addr-1), 2);
@@ -108,12 +113,13 @@ void instrumenter::instrument_module(size_t addr, const char* name)
     ASSERT(meta_buf);
     m_base_to_cov[addr] = mem_cov;
 
-    // 4gb limit, for relative data access
+    // check 4gb limit, for relative data access
     ASSERT((meta_buf + meta_buf_size) - addr < 0xffffffff);
 
     m_base_to_translator[addr] = translator(&m_base_to_inst[addr],
             &m_base_to_cov[addr],
-            &m_base_to_metadata[addr]);
+            &m_base_to_metadata[addr],
+            &code_section->data);
 }
 
 void instrumenter::should_instrument_modules()
@@ -237,12 +243,30 @@ DWORD instrumenter::handle_debug_event(DEBUG_EVENT* dbg_event,
                     data.hThread,
                     data.lpThreadLocalBase,
                     data.lpStartAddress);
-            __debugbreak();
             break;
         }
         case EXIT_PROCESS_DEBUG_EVENT: {
             auto data = dbg_event->u.ExitProcess;
             SAY_INFO("Exiting process with %d\n", data.dwExitCode);
+            // TODO: 
+            {
+                auto pi = m_debugger->get_proc_info();
+                tools::write_minidump("exit_process.dmp", pi, NULL);
+                SAY_INFO("instrumenter stats: \n"
+                    "%20d dbg_callbaks\n"
+                    "%20d exceptions\n"
+                    "%20d breakpoints\n"
+                    "%20d avs\n"
+                    "%20d translator_called\n"
+                    "%20d rip_redirections\n",
+                    m_stats.dbg_callbaks,
+                    m_stats.exceptions,
+                    m_stats.breakpoints,
+                    m_stats.avs,
+                    m_stats.translator_called,
+                    m_stats.rip_redirections
+                    );
+            }
             m_debugger->stop();
             break;
         }

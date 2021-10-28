@@ -212,7 +212,7 @@ namespace tools {
         auto b = GetThreadContext(thread, &ctx);
         ASSERT(b);
 
-        SAY_INFO("Thread's current rip = %p (set to %p), rcx = %p, rdx = %p\n", 
+        SAY_DEBUG("Thread's current rip = %p (set to %p), rcx = %p, rdx = %p\n", 
                 ctx.Rip, rip, ctx.Rcx, ctx.Rdx);
         ctx.Rip = rip;
         b = SetThreadContext(thread, &ctx);

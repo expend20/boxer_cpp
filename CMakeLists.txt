@@ -4,9 +4,12 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_VERBOSE_MAKEFILE on)
 
 project("boxer_cpp")
+add_subdirectory(third_party)
 
 include_directories(src)
-include_directories(third_party)
+include_directories(${CMAKE_CURRENT_BINARY_DIR}/third_party/obj/wkit/include)
+
+link_directories(${CMAKE_CURRENT_BINARY_DIR}/third_party/obj/wkit/lib)
 
 add_library(boxer_lib
     src/Say.cpp
@@ -17,6 +20,7 @@ add_library(boxer_lib
     src/pe.cpp
     src/mem_tool.cpp
     src/translator.cpp
+    src/dasm.cpp
     )
 
 add_executable(boxer
@@ -27,6 +31,7 @@ add_executable(boxer
 target_link_libraries(boxer
     boxer_lib
     "dbghelp.lib"
+    "xed.lib"
     )
 
 enable_language(ASM_NASM)
