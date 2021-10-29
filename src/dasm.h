@@ -31,30 +31,29 @@ namespace dasm {
 
     struct opcode {
 
-        xed_iclass_enum_t   iclass;
-        size_t              mem_disp;
-        size_t              mem_disp_addr;
-        uint32_t            mem_disp_width;
-        uint8_t             mem_ops_num;
-        uint32_t            mem_len;
-        size_t              branch_disp;
-        size_t              branch_disp_addr;
-        uint32_t            branch_disp_width;
-        size_t              size;
-        xed_reg_enum_t      reg_base;
-        xed_reg_enum_t      reg_index;
-        xed_reg_enum_t      reg0;
-        xed_reg_enum_t      seg_reg;
-        uint32_t            scale;
-        xed_decoded_inst_t  xedd;
-        size_t              addr;
+        xed_iclass_enum_t   iclass = XED_ICLASS_INVALID;
+        size_t              mem_disp = 0;
+        uint32_t            mem_disp_width = 0;
+        uint8_t             mem_ops_num = 0;
+        uint32_t            mem_len = 0;
+        size_t              branch_disp = 0;
+        uint32_t            branch_disp_width = 0;
+        uint32_t            size_new = 0;
+        uint32_t            size_orig = 0;
+        size_t              addr = 0;
+        uint32_t            scale = 0;
         uint8_t             opcode_data[DASM_MAX_OPCODE_LEN];
-        xed_category_enum_t category;
+        xed_reg_enum_t      reg_base = XED_REG_INVALID;
+        xed_reg_enum_t      reg_index = XED_REG_INVALID;
+        xed_reg_enum_t      reg0 = XED_REG_INVALID;
+        xed_reg_enum_t      seg_reg = XED_REG_INVALID;
+        xed_category_enum_t category = XED_CATEGORY_INVALID;
+        xed_operand_enum_t  first_op_name = XED_OPERAND_INVALID;
 
-        const xed_inst_t*        xi;
-        const xed_operand_t*     first_op;
+        xed_decoded_inst_t  xedd;
+        const xed_inst_t*        xi = NULL;
+        const xed_operand_t*     first_op = NULL;
 
-        xed_operand_enum_t first_op_name;
         /*
          * Simplest ctor provide only data and VA
          */
@@ -67,8 +66,8 @@ namespace dasm {
         xed_decoded_inst_t* get_xedd_ptr() {
             return &xedd;
         };
-        bool fix_rip_rel(size_t new_addr);
-        bool make_jxx_32bits(size_t new_addr);
+        bool fix_branch_disp(size_t new_addr);
+        bool fix_mem_disp(size_t new_addr);
         bool is_iclass_jxx();
 
     };

@@ -38,90 +38,118 @@ size_t dasm::opcode::rebuild_to_new_addr(
         uint8_t* buf, size_t buf_size, size_t new_addr)
 {
     xed_encoder_request_init_from_decode(&xedd);
-    auto mem_disp_changed = fix_rip_rel(new_addr);
-    auto branch_disp_changed = make_jxx_32bits(new_addr);
+    bool should_rebuild = false;
+    should_rebuild = fix_mem_disp(new_addr) ||
+        fix_branch_disp(new_addr);
 
     xed_error_enum_t xed_error;
 
-    uint32_t new_len = 0;
-    xed_error = xed_encode(&xedd,
-            (unsigned char*)buf, buf_size, &new_len);
-    if (xed_error != XED_ERROR_NONE) {
-        SAY_FATAL("Error encoding instruction");
-    }
-    // instruction size might be changed 
-    //ASSERT(size == new_len);
-    return new_len;
-}
+    if (!should_rebuild) {
+        // just copy the instructions
+        // TODO: replace to memcpy, beware, if we rebuild, size might change
+        xed_error = xed_encode(
+                &xedd, (unsigned char*)buf, buf_size, &size_new);
+        //ASSERT(size_orig == size_new);
+    } else {
 
-bool dasm::opcode::make_jxx_32bits(size_t new_addr){
-    if (branch_disp_width) {
-        //SAY_INFO("Branch disp width %x %x %x\n",
-        //        branch_disp,
-        //        branch_disp_width,
-        //        branch_disp_addr);
-
-        uint32_t new_len = size;
-        if (branch_disp_width != 4) {
-            uint8_t buf[0x20];
-            //SAY_INFO("Branch disp width changed to 4\n");
-
-            // prebuild opcode to get new size
-            xed_encoder_request_set_branch_displacement(
-                    &xedd, branch_disp, 4);
-            auto r = xed_encode(&xedd, buf, sizeof(buf), &new_len);
-            ASSERT(r == XED_ERROR_NONE);
-
+        xed_error = xed_encode(&xedd, (unsigned char*)buf, buf_size, &size_new);
+        if (xed_error != XED_ERROR_NONE) {
+            SAY_FATAL("Error encoding instruction");
         }
-        auto tgt_addr = addr + branch_disp + size;
-        auto branch_disp = tgt_addr - (new_addr + new_len);
-        xed_encoder_request_set_branch_displacement(
-                &xedd, branch_disp, 4);
+        // instruction size might be changed 
+        if (size_orig != size_new) {
+            // ...thus made invalid code, because it was calculated using
+            // previous size
+            fix_mem_disp(new_addr);
+            fix_branch_disp(new_addr);
+
+            xed_error = xed_encode(
+                    &xedd, (unsigned char*)buf, buf_size, &size_new);
+            if (xed_error != XED_ERROR_NONE) {
+                SAY_FATAL("Error encoding instruction");
+            }
+        }
+    }
+    return size_new ? size_new : size_orig;
+}
+
+bool dasm::opcode::fix_branch_disp(size_t new_addr){
+    if (branch_disp_width) {
+        auto tgt_addr = addr + branch_disp + size_orig;
+        auto branch_disp_new = tgt_addr - 
+            (new_addr + (size_new ? size_new : size_orig));
+        xed_encoder_request_set_branch_displacement(&xedd, branch_disp_new, 4);
         return true;
     }
     return false;
 }
 
-bool dasm::opcode::fix_rip_rel(size_t new_addr){
+bool dasm::opcode::fix_mem_disp(size_t new_addr){
     if (mem_disp_width && reg_base == XED_REG_RIP) {
-        //SAY_INFO("addr/memdisp/size %p/%p/%p\n", addr, mem_disp, size);
-        auto tgt_addr = addr + mem_disp + size;
-        auto mem_disp = tgt_addr - (new_addr + size);
-        SAY_INFO("tgt_adrr %p, new_addr %p, size %p\n", tgt_addr, new_addr,
-                size);
-
-        ASSERT(mem_disp_width == 4);
-
+        auto tgt_addr = addr + mem_disp + size_orig;
+        auto new_addr_end = new_addr + (size_new ? size_new : size_orig);
+        auto new_mem_disp = tgt_addr -  new_addr_end;
+        SAY_DEBUG("tgt_addr %p, new_addr %p, new_addr_end %p, size_orig %x, "\
+                "size_new %x, orig_disp %p, new_disp %x\n", 
+                tgt_addr, new_addr, new_addr_end, size_orig, size_new, mem_disp, 
+                new_mem_disp);
         xed_encoder_request_set_memory_displacement(
-                &xedd, mem_disp, mem_disp_width);
-
+                &xedd, new_mem_disp, mem_disp_width);
+        ASSERT(mem_disp_width == 4);
         return true;
     }
     return false;
 }
 
-/*
-uint8_t* dasm::opcode::rebuild() {
-    unsigned int newLen = 0;
-    xed_error_enum_t xed_error;
+//bool dasm::opcode::make_jxx_32bits(size_t new_addr){
+//    if (branch_disp_width) {
+//        //SAY_INFO("Branch disp width %x %x %x\n",
+//        //        branch_disp,
+//        //        branch_disp_width,
+//        //        branch_disp_addr);
+//
+//        if (branch_disp_width != 4) {
+//            uint8_t buf[0x20];
+//            //SAY_INFO("Branch disp width changed to 4\n");
+//
+//            // prebuild opcode to get new size
+//            xed_encoder_request_set_branch_displacement(
+//                    &xedd, branch_disp, 4);
+//            auto r = xed_encode(&xedd, buf, sizeof(buf), &size_new);
+//            ASSERT(r == XED_ERROR_NONE);
+//
+//        }
+//        return true;
+//    }
+//    return false;
+//}
 
-    xed_encoder_request_init_from_decode(&xedd);
-
-    // don't forget about RIP relative fix
-    if (mem_disp && reg_base == XED_REG_RIP) {
-        xed_encoder_request_set_memory_displacement(&xedd,
-                mem_disp, mem_disp_width);
-    }
-
-    xed_error = xed_encode(&xedd,
-            (unsigned char*)opcode_data, sizeof(opcode_data), &newLen);
-    if (xed_error != XED_ERROR_NONE) {
-        SAY_FATAL("Error encoding instruction");
-    }
-    ASSERT(size == newLen);
-    return opcode_data;
-}
-*/
+//bool dasm::opcode::fix_rip_rel(size_t new_addr){
+//    if (mem_disp_width && reg_base == XED_REG_RIP) {
+//        //SAY_INFO("addr/memdisp/size %p/%p/%p\n", addr, mem_disp, size);
+//        auto tgt_addr = addr + mem_disp + size_orig;
+//        auto new_addr_end = new_addr + (size_new ? size_new : size_orig);
+//        int32_t new_mem_disp = tgt_addr -  new_addr_end;
+//        SAY_INFO("tgt_addr %p, new_addr %p, new_addr_end %p, size_orig %x, "\
+//                "size_new %x, orig_disp %p, new_disp %p\n", 
+//                tgt_addr, new_addr, new_addr_end, size_orig, size_new, mem_disp, 
+//                new_mem_disp);
+//
+//        ASSERT(mem_disp_width == 4);
+//
+//        // let's check if new opcode has the same size
+//        auto r = xed_encode(&xedd, buf, sizeof(buf), &size_new);
+//        ASSERT(r == XED_ERROR_NONE);
+//        if (size_new != size_orig) {
+//        }
+//
+//        xed_encoder_request_set_memory_displacement(
+//                &xedd, new_mem_disp, mem_disp_width);
+//
+//        return true;
+//    }
+//    return false;
+//}
 
 dasm::maker::maker() 
 {
@@ -173,26 +201,18 @@ dasm::opcode::opcode(size_t data, size_t addr_arg) {
         return;
     }
 
-    size        = xed_decoded_inst_get_length(&xedd);
+    size_orig   = xed_decoded_inst_get_length(&xedd);
     iclass      = xed_decoded_inst_get_iclass(&xedd);
     reg_base    = xed_decoded_inst_get_base_reg(&xedd, 0);
     mem_ops_num = xed_decoded_inst_number_of_memory_operands(&xedd);
 
     // jmp rel32
     branch_disp  = xed_decoded_inst_get_branch_displacement(&xedd);
-    if (branch_disp_addr) {
-        branch_disp_addr = branch_disp + addr + size;
-    }
-    branch_disp_width =
-        xed_decoded_inst_get_branch_displacement_width(&xedd);
+    branch_disp_width = xed_decoded_inst_get_branch_displacement_width(&xedd);
 
     // jmp [rel32]
     mem_disp  = xed_decoded_inst_get_memory_displacement(&xedd, 0);
-    if (mem_disp && reg_base == XED_REG_RIP) {
-        mem_disp_addr += addr + size;
-    }
-    mem_disp_width =
-        xed_decoded_inst_get_memory_displacement_width(&xedd, 0);
+    mem_disp_width = xed_decoded_inst_get_memory_displacement_width(&xedd, 0);
 
     category      = xed_decoded_inst_get_category(&xedd);
     xi            = xed_decoded_inst_inst(&xedd);

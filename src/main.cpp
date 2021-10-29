@@ -14,11 +14,11 @@ int main(int argc, const char** argv) {
     SAY_INFO("Hello %s", "world\n");
 
 
-    auto dbg = debugger("program.exe", 
+    auto dbg = debugger("notepad.exe", 
         DEBUG_PROCESS | DEBUG_ONLY_THIS_PROCESS);
 
     auto ins = instrumenter();
-    ins.add_module("program.exe");
+    ins.add_module("notepad.exe");
     
     dbg.register_handler(&ins);
     dbg.run(-1);

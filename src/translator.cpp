@@ -79,16 +79,16 @@ size_t translator::instrument(size_t addr)
     }
 
     auto rip = addr;
-    auto bb_start = true;
+    size_t bb_start = 0;
     while(1) {
         auto remote_inst = m_inst_code->addr_remote() + m_inst_offset;
         // should instrument instruction
-        if (bb_start) {
+        if (!bb_start) {
+            bb_start = remote_inst;
             m_remote_orig_to_inst_bb[rip] = remote_inst;
             SAY_DEBUG("remote bb got instrumented %p -> %p\n", rip, remote_inst);
             make_dword_inc_cov_hit();
             remote_inst = m_inst_code->addr_remote() + m_inst_offset;
-            bb_start = false;
         }
 
         // disasm & cache
@@ -104,8 +104,9 @@ size_t translator::instrument(size_t addr)
                     buf,
                     sizeof(buf), 0, 0, 0);
 
-            SAY_DEBUG("%p %-20s (Category: %s, iclass: %s)\n",
+            SAY_DEBUG("%p %p %-30s (Category: %s, iclass: %s)\n",
                     rip, 
+                    remote_inst,
                     buf,
                     xed_category_enum_t2str(op->category),
                     xed_iclass_enum_t2str(op->iclass));
@@ -133,7 +134,7 @@ size_t translator::instrument(size_t addr)
         }
         if (op->is_iclass_jxx()) {
             // place new jump to keep code valid
-            auto tgt_addr = op->size + op->addr;
+            auto tgt_addr = op->size_orig + op->addr;
             make_jump(tgt_addr);
             m_remote_dd_refs.insert(
                     m_inst_code->addr_remote() + m_inst_offset - 4);
@@ -142,9 +143,9 @@ size_t translator::instrument(size_t addr)
 
 
         // continue the loop
-        rip += op->size;
+        rip += op->size_orig;
     }
-    //fix_dd_refs();
+    fix_dd_refs();
     m_inst_code->commit();
 
     return m_remote_orig_to_inst_bb[addr];

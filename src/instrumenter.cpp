@@ -46,7 +46,7 @@ bool instrumenter::should_handle_dep_av(size_t addr)
                 auto r = GetThreadContext(m_debugger->get_proc_info()->hThread,
                         &ctx);
                 ASSERT(r);
-                SAY_DEBUG("threads rip: %p\n", ctx.Rip);
+                SAY_DEBUG("redirecting %p(%p) -> %p\n", addr, ctx.Rip, inst_addr);
             }
 
             tools::update_thread_rip(m_debugger->get_proc_info()->hThread,
