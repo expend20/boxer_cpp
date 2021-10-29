@@ -122,27 +122,25 @@ void instrumenter::instrument_module(size_t addr, const char* name)
             &code_section->data);
 }
 
-void instrumenter::should_instrument_modules()
+bool instrumenter::should_instrument_module(const char* name)
 {
     for (auto& mod_to_inst: m_modules_to_instrument) {
-        for (auto& [addr, name]: m_remote_modules_list) {
-            if (!_stricmp(mod_to_inst.c_str(), name.c_str())) {
-                instrument_module(addr, name.c_str());
-            }
+        if (!_stricmp(mod_to_inst.c_str(), name)) {
+            return true;
         }
     }
+    return false;
 }
 
 void instrumenter::add_module(const char* name) 
 {
+    LOG_INFO("Instrumeting module %s\n", name);
     m_modules_to_instrument.push_back(std::string(name));
 }
 
 void instrumenter::on_first_breakpoint()
 {
     LOG_INFO("on_first_breakpoint() reached\n");
-
-    should_instrument_modules();
 
 }
 
@@ -194,8 +192,13 @@ DWORD instrumenter::handle_exception(EXCEPTION_DEBUG_INFO* dbg_info)
             }
             break;
         }
+        case STATUS_STACK_OVERFLOW: {
+            SAY_DEBUG("Got STATUS_STACK_OVERFLOW, ignoring...\n");
+            break;
+        }
         default: {
-            SAY_FATAL("Invalid exception code %x",
+            // TODO:
+            SAY_ERROR("Invalid exception code %x",
                     rec->ExceptionCode);
         }
     }
@@ -219,6 +222,10 @@ DWORD instrumenter::handle_debug_event(DEBUG_EVENT* dbg_event,
                     data.lpBaseOfImage,
                     mod_name.c_str());
             m_remote_modules_list[(size_t)data.lpBaseOfImage] = mod_name;
+
+            if (should_instrument_module(mod_name.c_str()))
+                instrument_module((size_t)data.lpBaseOfImage, mod_name.c_str());
+
             CloseHandle(data.hFile);
             break;
         }
@@ -231,18 +238,31 @@ DWORD instrumenter::handle_debug_event(DEBUG_EVENT* dbg_event,
 
             // extract file name
             auto mod_name = tools::get_mod_name_by_handle(data.hFile);
-            SAY_DEBUG("Module loaded %p %s\n",
+            SAY_INFO("Module loaded %p %s\n",
                     data.lpBaseOfDll,
                     mod_name.c_str());
             m_remote_modules_list[(size_t)data.lpBaseOfDll] = mod_name;
+
+            if (should_instrument_module(mod_name.c_str()))
+                instrument_module((size_t)data.lpBaseOfDll, mod_name.c_str());
+            break;
+        }
+        case UNLOAD_DLL_DEBUG_EVENT: {
+            auto data = dbg_event->u.UnloadDll;
+            SAY_INFO("Module unloaded %p\n", data.lpBaseOfDll);
             break;
         }
         case CREATE_THREAD_DEBUG_EVENT: {
             auto data = dbg_event->u.CreateThread;
-            SAY_DEBUG("Create thread: %x, base %p, start %p\n",
+            SAY_INFO("Create thread: %x, base %p, start %p\n",
                     data.hThread,
                     data.lpThreadLocalBase,
                     data.lpStartAddress);
+            break;
+        }
+        case EXIT_THREAD_DEBUG_EVENT: {
+            auto data = dbg_event->u.ExitThread;
+            SAY_INFO("Exit thread: %x\n", data.dwExitCode);
             break;
         }
         case EXIT_PROCESS_DEBUG_EVENT: {
@@ -268,6 +288,14 @@ DWORD instrumenter::handle_debug_event(DEBUG_EVENT* dbg_event,
                     );
             }
             m_debugger->stop();
+            break;
+        }
+        case OUTPUT_DEBUG_STRING_EVENT: {
+            auto data = dbg_event->u.DebugString;
+            SAY_INFO("Debug string event (is unicode %d, len = %d) %p\n", 
+                    data.fUnicode,
+                    data.nDebugStringLength,
+                    data.lpDebugStringData);
             break;
         }
         default:

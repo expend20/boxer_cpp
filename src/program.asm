@@ -19,7 +19,6 @@ simple_call:
 .callme
     ret
 
-WinMain:
 jmp_dd_test:
     jmp [rel jmp_dd]
     int3
@@ -28,6 +27,7 @@ jmp_dd_test:
 .jmp_dd_next
     ret
     
+WinMain:
 loop:
     mov ecx, 10
 .loop

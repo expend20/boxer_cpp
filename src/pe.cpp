@@ -313,8 +313,8 @@ pehelper::pe::pe(HANDLE process, size_t data) {
     m_img_header = mem_tool(m_process, m_remote_addr, 0x1000);
 
     extract_sections();
-    extract_imports();
-    extract_exception_directory();
+    //extract_imports();
+    //extract_exception_directory();
 
 }
 

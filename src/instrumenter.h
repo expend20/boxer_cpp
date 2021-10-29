@@ -30,7 +30,7 @@ class instrumenter: public idebug_handler {
 
         DWORD handle_exception(EXCEPTION_DEBUG_INFO* dbg_info);
         void on_first_breakpoint();
-        void should_instrument_modules();
+        bool should_instrument_module(const char* name);
         void instrument_module(size_t addr, const char* name);
         bool should_handle_dep_av(size_t addr);
 

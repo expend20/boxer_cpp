@@ -78,6 +78,11 @@ bool dasm::opcode::fix_branch_disp(size_t new_addr){
         auto tgt_addr = addr + branch_disp + size_orig;
         auto branch_disp_new = tgt_addr - 
             (new_addr + (size_new ? size_new : size_orig));
+        SAY_DEBUG("tgt_addr %p, new_addr %p, size_orig %x, "\
+                "size_new %x, orig_disp %p, new_disp %x\n", 
+                tgt_addr, new_addr, size_orig, size_new, 
+                branch_disp, 
+                branch_disp_new);
         xed_encoder_request_set_branch_displacement(&xedd, branch_disp_new, 4);
         return true;
     }

@@ -74,10 +74,10 @@ namespace tools {
             size_t data_size,
             DWORD permissions) 
     {
-        //SAY_DEBUG("Allocating 0x%x bytes just after %p in process %d",
-        //       data_size, module_end, proc);
+        SAY_DEBUG("Allocating 0x%x bytes just after %p in process %d",
+               data_size, module_end, proc);
         size_t new_alloc = 0;
-        for (size_t ptr = module_end; ptr <= module_end + 0x10000;
+        for (size_t ptr = module_end; ptr <= module_end + 0x80000000;
                 ptr += 0x1000) {
             //SAY_DEBUG("Trying addr %p...\n", ptr);
             new_alloc = (size_t)VirtualAllocEx(
