@@ -1,9 +1,9 @@
-[bits 64]
+[bits 32]
 global WinMain
 
 section .data
 
-some_text: 
+some_text
     db 'aaaaaaa', 0
 some_var 
     dd 0x12345678
@@ -47,7 +47,7 @@ simple_cond:
     ret
 
 simple_lea:
-    lea rax, [rel some_text]
+    lea eax, [rel some_text]
     ret
 
 simplest:
@@ -60,7 +60,6 @@ simplest:
     nop
     int3
     mov eax, eax
-    xor rax, rax
-    inc rax
+    inc eax
     ret
 

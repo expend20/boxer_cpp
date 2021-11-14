@@ -25,6 +25,7 @@ class instrumenter: public idebug_handler {
         DWORD handle_debug_event(DEBUG_EVENT* dbg_event,
                 debugger* debuger) override;
         void add_module(const char* module);
+        void print_stats();
 
     private:
 
@@ -32,20 +33,28 @@ class instrumenter: public idebug_handler {
         void on_first_breakpoint();
         bool should_instrument_module(const char* name);
         void instrument_module(size_t addr, const char* name);
-        bool should_handle_dep_av(size_t addr);
+        void instrument_module_int3(size_t addr, const char* name);
+        bool should_translate_dep_av(size_t addr);
+        bool should_translate_int3(size_t addr);
 
     private:
         instrumenter_stats m_stats = {0};
+        debugger* m_debugger = NULL;
+
         std::vector<std::string> m_modules_to_instrument;
         std::vector<pehelper::pe> m_modules;
         std::vector<pehelper::section*> m_sections_patched;
+        std::map<size_t, size_t> m_sect_base_to_module;
+
+        // TODO: refactor all base_to* to one map with struct perhaps?
         std::map<size_t, std::string> m_remote_modules_list;
+        std::map<size_t, mem_tool> m_base_to_shadow;
         std::map<size_t, mem_tool> m_base_to_inst;
         std::map<size_t, mem_tool> m_base_to_cov;
         std::map<size_t, mem_tool> m_base_to_metadata;
         std::map<size_t, translator> m_base_to_translator;
 
-        debugger* m_debugger = NULL;
+        bool m_is_int3_inst = false;
 
 };
 

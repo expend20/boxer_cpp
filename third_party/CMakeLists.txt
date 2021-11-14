@@ -30,7 +30,7 @@ endif()
 add_custom_command(
   OUTPUT ${XED_LIB} ${XED_INTERFACE_H}
   COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/xed/mfile.py ${XED_HOST_CPU}
-  COMMENT "Building Xed"
+  COMMENT "Building Xed " ${XED_HOST_CPU}
 )
 
 add_custom_target(

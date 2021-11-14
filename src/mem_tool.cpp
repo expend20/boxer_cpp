@@ -61,10 +61,10 @@ size_t mem_tool::addr_loc_end() {
 }
 
 void mem_tool::read() {
-    size_t rw = 0;
+    SIZE_T rw = 0;
 
-    if (!ReadProcessMemory(m_proc, (void*)m_addr_remote, &m_data[0], m_data.size(),
-                &rw)){
+    if (!ReadProcessMemory(m_proc, (void*)m_addr_remote, &m_data[0], 
+                m_data.size(), &rw)){
         SAY_FATAL("can't read process memory %x %p %x\n",
                 m_proc, m_addr_remote, m_data.size());
     }
@@ -89,12 +89,12 @@ mem_tool::mem_tool(HANDLE process, size_t data, size_t len) {
 }
 
 void mem_tool::commit() {
-    size_t rw = 0;
+    SIZE_T rw = 0;
 
     if (!WriteProcessMemory(m_proc, (void*)m_addr_remote, &m_data[0], m_data.size(),
                 &rw)){
-        SAY_FATAL("can't write process memory %x %p %x\n",
-                m_proc, m_addr_remote, m_data.size());
+        SAY_FATAL("can't write process memory %x %p -> %p %x\n",
+                m_proc, &m_data[0], m_addr_remote, m_data.size());
     }
 
     ASSERT(rw == m_data.size());

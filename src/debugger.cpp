@@ -59,20 +59,21 @@ void debugger::run(size_t steps) {
         auto continue_status =
             m_handler->handle_debug_event(&m_debug_event, this);
 
-        switch (continue_status) {
-            case DBG_CONTINUE:
-                SAY_DEBUG("sending DBG_CONTINUE\n");
-                break;
-            case DBG_EXCEPTION_HANDLED:
-                SAY_DEBUG("sending DBG_EXCEPTION_HANDLED\n");
-                break;
-            case DBG_EXCEPTION_NOT_HANDLED:
-                SAY_DEBUG("sending DBG_EXCEPTION_NOT_HANDLED\n");
-                break;
-            default:
-                SAY_DEBUG("sending uknown continue status %x\n", 
-                        continue_status);
-        }
+        // TODO: debug only
+        //switch (continue_status) {
+        //    case DBG_CONTINUE:
+        //        SAY_DEBUG("sending DBG_CONTINUE\n");
+        //        break;
+        //    case DBG_EXCEPTION_HANDLED:
+        //        SAY_DEBUG("sending DBG_EXCEPTION_HANDLED\n");
+        //        break;
+        //    case DBG_EXCEPTION_NOT_HANDLED:
+        //        SAY_DEBUG("sending DBG_EXCEPTION_NOT_HANDLED\n");
+        //        break;
+        //    default:
+        //        SAY_DEBUG("sending uknown continue status %x\n", 
+        //                continue_status);
+        //}
         ContinueDebugEvent(m_debug_event.dwProcessId,
                 m_debug_event.dwThreadId,
                 continue_status);

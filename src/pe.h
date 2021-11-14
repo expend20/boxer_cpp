@@ -18,6 +18,7 @@ namespace pehelper {
 
     };
 
+#ifdef _WIN64
     // Same as RUNTIME_FUNCION but with fixed pointers
     struct runtime_function {
         size_t begin;
@@ -27,7 +28,6 @@ namespace pehelper {
         size_t handlerData;
         size_t handlerCallback;
     };
-
 
     /*
      * There are lots of functions which are represented not only by one
@@ -40,6 +40,7 @@ namespace pehelper {
         size_t begin;
         size_t end;
     };
+#endif
 
     struct import_function {
         std::string name;
@@ -57,12 +58,18 @@ namespace pehelper {
             size_t m_remote_addr = 0;
             size_t m_remote_size = 0;
             HANDLE m_process = INVALID_HANDLE_VALUE;
+        #ifdef _WIN64
+            IMAGE_NT_HEADERS64 *m_nt_headers = NULL;
+        #else
             IMAGE_NT_HEADERS *m_nt_headers = NULL;
+        #endif
             mem_tool m_img_header;
             std::vector<section> m_sections;
+            std::vector<import_module> m_import;
+        #ifdef _WIN64
             std::vector<runtime_function> m_exception_funcs;
             std::vector<runtime_function_united> m_exception_united_funcs;
-            std::vector<import_module> m_import;
+        #endif
 
         public:
             pe(){};
@@ -76,13 +83,16 @@ namespace pehelper {
             section*          get_section(size_t addr);
             section*          get_section(std::string name);
 
+        #ifdef _WIN64
             runtime_function*  get_runtime_function(size_t rip);
             runtime_function_united*  get_runtime_function_united(size_t rip);
+            std::vector<runtime_function>* get_runtime_functions();
+        #endif
 
             void              extract_exception_directory();
             void              extract_sections();
+
             void              extract_imports();
-            std::vector<runtime_function>* get_runtime_functions();
     };
 
 };

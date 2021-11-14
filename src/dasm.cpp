@@ -92,6 +92,11 @@ bool dasm::opcode::fix_branch_disp(size_t new_addr){
 bool dasm::opcode::fix_mem_disp(size_t new_addr){
     if (mem_disp_width && reg_base == XED_REG_RIP) {
         auto tgt_addr = addr + mem_disp + size_orig;
+        if (tgt_addr >= code_sect_orig && 
+                tgt_addr < (code_sect_orig + code_sect_size)) {
+            SAY_DEBUG("Referenced memory is in code section\n");
+            tgt_addr = tgt_addr - code_sect_orig + code_sect_new;
+        }
         auto new_addr_end = new_addr + (size_new ? size_new : size_orig);
         auto new_mem_disp = tgt_addr -  new_addr_end;
         SAY_DEBUG("tgt_addr %p, new_addr %p, new_addr_end %p, size_orig %x, "\
@@ -158,8 +163,15 @@ bool dasm::opcode::fix_mem_disp(size_t new_addr){
 
 dasm::maker::maker() 
 {
+
+#ifdef _WIN64
     dstate.mmode = XED_MACHINE_MODE_LONG_64;
     dstate.stack_addr_width = XED_ADDRESS_WIDTH_64b;
+#else 
+    dstate.mmode = XED_MACHINE_MODE_LEGACY_32;
+    dstate.stack_addr_width = XED_ADDRESS_WIDTH_32b;
+#endif
+
 }
 
 uint32_t dasm::maker::make(uint8_t* output_data, uint32_t output_size)
@@ -179,6 +191,16 @@ uint32_t dasm::maker::make(uint8_t* output_data, uint32_t output_size)
     return new_len;
 }
 
+dasm::opcode::opcode(size_t data, size_t addr, size_t _code_sect_orig, 
+                size_t _code_sect_new, size_t _code_sect_size):
+    opcode(data, addr)
+{
+    code_sect_orig = _code_sect_orig;
+    code_sect_new = _code_sect_new;
+    code_sect_size = _code_sect_size;
+    ASSERT(code_sect_orig && code_sect_new && code_sect_size);
+}
+
 dasm::opcode::opcode(size_t data, size_t addr_arg) {
 
     ASSERT(data);
@@ -189,8 +211,13 @@ dasm::opcode::opcode(size_t data, size_t addr_arg) {
     xed_machine_mode_enum_t  mmode;
     xed_address_width_enum_t stack_addr_width;
 
-    mmode            = XED_MACHINE_MODE_LONG_64;
+#ifdef _WIN64
+    mmode = XED_MACHINE_MODE_LONG_64;
     stack_addr_width = XED_ADDRESS_WIDTH_64b;
+#else 
+    mmode = XED_MACHINE_MODE_LEGACY_32;
+    stack_addr_width = XED_ADDRESS_WIDTH_32b;
+#endif
 
     xed_decoded_inst_zero(&xedd);
     xed_decoded_inst_set_mode(&xedd, mmode, stack_addr_width);
@@ -252,6 +279,31 @@ dasm::opcode::opcode(size_t data, size_t addr_arg) {
        */
 }
 
+dasm::opcode* dasm::cached_code::get(size_t data, size_t addr,
+        size_t code_sect_orig, size_t code_sect_new, size_t code_sect_size) {
+
+    auto r = m_idxes.find(addr);
+    if (r == m_idxes.end()) {
+
+        /*
+         * Add new opcode
+         */
+
+        auto op = opcode(data, addr, code_sect_orig, code_sect_new,
+                code_sect_size);
+        auto idx = m_opcodes.size();
+        m_opcodes.push_back(op);
+        m_idxes[addr] = idx;
+
+        return &m_opcodes[idx];
+
+    } else {
+
+        return &m_opcodes[r->second];
+
+    }
+}
+
 dasm::opcode* dasm::cached_code::get(size_t data, size_t addr) {
 
     auto r = m_idxes.find(addr);
@@ -274,6 +326,7 @@ dasm::opcode* dasm::cached_code::get(size_t data, size_t addr) {
 
     }
 }
+
 dasm::opcode* dasm::cached_code::get(size_t ptr) {
 
     auto r = m_idxes.find(ptr);

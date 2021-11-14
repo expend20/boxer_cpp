@@ -23,6 +23,8 @@ add_library(boxer_lib
     src/dasm.cpp
     )
 
+add_dependencies(boxer_lib xed)
+
 add_executable(boxer
     src/main.cpp
     src/debugger.cpp
@@ -35,9 +37,17 @@ target_link_libraries(boxer
     )
 
 enable_language(ASM_NASM)
-add_executable(program
-    src/program.asm
-    )
+
+if("${CMAKE_SIZEOF_VOID_P}" STREQUAL "4")
+    add_executable(program
+        src/program32.asm
+        )
+else()
+    add_executable(program
+        src/program64.asm
+        )
+endif()
+
 set_property(TARGET program 
     APPEND_STRING PROPERTY LINK_FLAGS " /ENTRY:WinMain"
     )

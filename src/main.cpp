@@ -8,24 +8,31 @@
 
 #include "instrumenter.h"
 
-
-int main(int argc, const char** argv) {
+int main(int argc, const char** argv)
+{
     
     InitLogs(argc, argv);
     SAY_INFO("Hello %s", "world\n");
 
     std::vector<const char*> cov_mods;
     GetOptionAll("--cov", argc, argv, cov_mods);
+    if (!cov_mods.size()) {
+        SAY_ERROR("Specify at least one --cov parameter.\n");
+        exit(-1);
+        return -1;
+    }
+
     auto cmd = GetOption("--cmd", argc, argv);
+    if (!cmd) {
+        SAY_ERROR("Specify --cmd parameter.\n");
+        exit(-1);
+        return -1;
+    }
 
     auto dbg = debugger(cmd, 
         DEBUG_PROCESS | DEBUG_ONLY_THIS_PROCESS);
 
     auto ins = instrumenter();
-    if (!cov_mods.size()) {
-        SAY_ERROR("Specify at least one --cov parameter.\n");
-        exit(-1);
-    }
     for (auto &mod: cov_mods) {
         ins.add_module(mod);
     }

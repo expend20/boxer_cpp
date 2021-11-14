@@ -74,7 +74,7 @@ namespace tools {
             size_t data_size,
             DWORD permissions) 
     {
-        SAY_DEBUG("Allocating 0x%x bytes just after %p in process %d",
+        SAY_DEBUG("Allocating 0x%x bytes just after %p in process %d\n",
                data_size, module_end, proc);
         size_t new_alloc = 0;
         for (size_t ptr = module_end; ptr <= module_end + 0x80000000;
@@ -205,16 +205,34 @@ namespace tools {
         }
     }
 
-    void update_thread_rip(HANDLE thread, size_t rip)
+    void update_thread_rip(HANDLE thread, size_t pc)
     {
         CONTEXT ctx;
         ctx.ContextFlags = CONTEXT_ALL;
         auto b = GetThreadContext(thread, &ctx);
         ASSERT(b);
 
+#ifdef _WIN64
         SAY_DEBUG("Thread's current rip = %p (set to %p), rcx = %p, rdx = %p\n", 
-                ctx.Rip, rip, ctx.Rcx, ctx.Rdx);
-        ctx.Rip = rip;
+                ctx.Rip, pc, ctx.Rcx, ctx.Rdx);
+        ctx.Rip = pc;
+#else
+        SAY_DEBUG("Thread's current eip = %p (set to %p), ecx = %p, edx = %p\n", 
+                ctx.Eip, pc, ctx.Ecx, ctx.Edx);
+        ctx.Eip = pc;
+#endif
+        b = SetThreadContext(thread, &ctx);
+        ASSERT(b);
+    }
+
+    void update_thread_set_trap(HANDLE thread)
+    {
+        CONTEXT ctx;
+        ctx.ContextFlags = CONTEXT_ALL;
+        auto b = GetThreadContext(thread, &ctx);
+        ASSERT(b);
+
+        ctx.EFlags |= 0x100;
         b = SetThreadContext(thread, &ctx);
         ASSERT(b);
     }

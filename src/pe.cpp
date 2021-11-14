@@ -3,6 +3,7 @@
 
 #include <ehdata.h>
 
+#ifdef _WIN64
 std::vector<pehelper::runtime_function>* pehelper::pe::get_runtime_functions(){
     return &m_exception_funcs;
 }
@@ -18,7 +19,8 @@ pehelper::runtime_function* pehelper::pe::get_runtime_function(size_t rip){
     return 0;
 }
 
-pehelper::runtime_function_united* pehelper::pe::get_runtime_function_united(size_t rip){
+pehelper::runtime_function_united* pehelper::pe::get_runtime_function_united(
+        size_t rip){
     for (size_t i = 0; i < m_exception_united_funcs.size(); i++) {
         if (rip >= m_exception_united_funcs[i].begin &&
                 rip < m_exception_united_funcs[i].end) {
@@ -27,6 +29,7 @@ pehelper::runtime_function_united* pehelper::pe::get_runtime_function_united(siz
     }
     return 0;
 }
+#endif
 
 void pehelper::pe::extract_imports(){
     auto nt = get_nt_headers();
@@ -116,6 +119,7 @@ void pehelper::pe::extract_imports(){
 
 }
 
+#ifdef _WIN64
 void pehelper::pe::extract_exception_directory(){
 
     // TODO: example of using RtlLookupFunction Entry
@@ -237,6 +241,7 @@ void pehelper::pe::extract_exception_directory(){
     rfu.end = prev_end;
     m_exception_united_funcs.push_back(rfu);
 }
+#endif // _WIN64
 
 size_t   pehelper::pe::get_section_count(){
     return m_sections.size();
@@ -271,10 +276,15 @@ void pehelper::pe::extract_sections() {
     auto dos = (IMAGE_DOS_HEADER*)m_img_header.addr_loc();
     ASSERT(dos->e_magic == IMAGE_DOS_SIGNATURE);
 
+#ifdef _WIN64
     auto pe = (IMAGE_NT_HEADERS64*)((size_t)dos + dos->e_lfanew);
+    ASSERT(pe->FileHeader.Machine == IMAGE_FILE_MACHINE_AMD64);
+#else 
+    auto pe = (IMAGE_NT_HEADERS*)((size_t)dos + dos->e_lfanew);
+    ASSERT(pe->FileHeader.Machine == IMAGE_FILE_MACHINE_I386);
+#endif 
     ASSERT(pe->Signature == IMAGE_NT_SIGNATURE);
 
-    ASSERT(pe->FileHeader.Machine == IMAGE_FILE_MACHINE_AMD64);
     auto sect = (IMAGE_SECTION_HEADER*)((size_t)pe + sizeof(pe->Signature) +
             sizeof(pe->FileHeader) + pe->FileHeader.SizeOfOptionalHeader);
     m_nt_headers = pe;

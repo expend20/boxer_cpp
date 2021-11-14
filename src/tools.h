@@ -18,6 +18,7 @@ namespace tools {
 
     void write_minidump(const char* path, HANDLE proc, DWORD pid);
     void update_thread_rip(HANDLE thread, size_t rip);
+    void update_thread_set_trap(HANDLE thread);
 
     void write_minidump(const char* path, 
             PROCESS_INFORMATION* pi,

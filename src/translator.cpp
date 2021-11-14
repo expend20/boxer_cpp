@@ -2,6 +2,39 @@
 #include "Say.h"
 #include "dasm.h"
 
+
+void translator::make_dword_mov_cov_hit()
+{
+    size_t inst_size = 6;
+    ASSERT(m_inst_offset + inst_size < m_inst_code->size());
+    ASSERT(m_cov_offset + 4 < m_cov_buf->size());
+
+    size_t bits = 32;
+    auto op = dasm::maker();
+#ifdef _WIN64
+    size_t disp = (m_cov_buf->addr_remote() + m_cov_offset)
+        - (m_inst_code->addr_remote() + m_inst_offset + inst_size);
+    xed_inst2(&op.enc_inst, op.dstate,
+            XED_ICLASS_MOV, 0,
+            xed_mem_bd(XED_REG_RIP, xed_disp(disp, bits), bits),
+            xed_imm0(1, bits)
+            );
+#else 
+    size_t disp = m_cov_buf->addr_remote() + m_cov_offset;
+    xed_inst2(&op.enc_inst, op.dstate,
+            XED_ICLASS_MOV, 0,
+            xed_mem_bd(XED_REG_INVALID, xed_disp(disp, bits), bits),
+            xed_imm0(1, bits)
+            );
+#endif
+    auto new_inst_size = op.make(
+            (uint8_t*)(m_inst_code->addr_loc() + m_inst_offset), 
+            inst_size);
+    ASSERT(new_inst_size == inst_size);
+    m_cov_offset += 4;
+    m_inst_offset += new_inst_size;
+}
+
 void translator::make_dword_inc_cov_hit()
 {
     size_t inst_size = 7;
@@ -9,14 +42,23 @@ void translator::make_dword_inc_cov_hit()
     ASSERT(m_cov_offset + 4 < m_cov_buf->size());
 
     size_t bits = 32;
+    auto op = dasm::maker();
+#ifdef _WIN64
     size_t disp = (m_cov_buf->addr_remote() + m_cov_offset)
         - (m_inst_code->addr_remote() + m_inst_offset + inst_size);
-    auto op = dasm::maker();
     xed_inst2(&op.enc_inst, op.dstate,
             XED_ICLASS_ADD, 0,
             xed_mem_bd(XED_REG_RIP, xed_disp(disp, bits), bits),
             xed_imm0(1, 8)
             );
+#else 
+    size_t disp = m_cov_buf->addr_remote() + m_cov_offset;
+    xed_inst2(&op.enc_inst, op.dstate,
+            XED_ICLASS_ADD, 0,
+            xed_mem_bd(XED_REG_INVALID, xed_disp(disp, bits), bits),
+            xed_imm0(1, 8)
+            );
+#endif
     auto new_inst_size = op.make(
             (uint8_t*)(m_inst_code->addr_loc() + m_inst_offset), 
             inst_size);
@@ -86,15 +128,20 @@ size_t translator::instrument(size_t addr)
         if (!bb_start) {
             bb_start = remote_inst;
             m_remote_orig_to_inst_bb[rip] = remote_inst;
-            SAY_DEBUG("remote bb got instrumented %p -> %p\n", rip, remote_inst);
-            make_dword_inc_cov_hit();
+            SAY_DEBUG("remote bb got instrumented %p -> %p\n", 
+                    rip, remote_inst);
+            //make_dword_inc_cov_hit();
+            //make_dword_mov_cov_hit();
             remote_inst = m_inst_code->addr_remote() + m_inst_offset;
         }
 
         // disasm & cache
-        auto offset = rip - m_text_sect->addr_remote();
+        auto offset = rip - m_text_sect_remote_addr;
         auto local_addr = m_text_sect->addr_loc() + offset;
-        auto op = m_dasm_cache.get(local_addr, rip);
+        SAY_DEBUG("Disasm (%x) local: %p remote: %p\n", 
+                offset, local_addr, rip);
+        auto op = m_dasm_cache.get(local_addr, rip, m_text_sect_remote_addr,
+                m_text_sect->addr_remote(), m_text_sect->size());
 
         // TODO: debug code only
         {
@@ -103,7 +150,6 @@ size_t translator::instrument(size_t addr)
                     &op->xedd,
                     buf,
                     sizeof(buf), 0, 0, 0);
-
             SAY_DEBUG("%p %p %-30s (Category: %s, iclass: %s)\n",
                     rip, 
                     remote_inst,
@@ -132,7 +178,9 @@ size_t translator::instrument(size_t addr)
         if (op->iclass == XED_ICLASS_JMP) {
             break;
         }
-        if (op->is_iclass_jxx()) {
+        if (op->is_iclass_jxx() 
+                //|| op->category == XED_CATEGORY_CALL
+                ) {
             // place new jump to keep code valid
             auto tgt_addr = op->size_orig + op->addr;
             make_jump(tgt_addr);
@@ -140,7 +188,6 @@ size_t translator::instrument(size_t addr)
                     m_inst_code->addr_remote() + m_inst_offset - 4);
             break;
         }
-
 
         // continue the loop
         rip += op->size_orig;
@@ -154,11 +201,13 @@ size_t translator::instrument(size_t addr)
 translator::translator(mem_tool* inst_code, 
         mem_tool* cov_buf, 
         mem_tool* metadata,
-        mem_tool* text_sect):
+        mem_tool* text_sect,
+        size_t text_sect_remote_addr):
     m_inst_code(inst_code),
     m_cov_buf(cov_buf),
     m_metadata(metadata),
-    m_text_sect(text_sect)
+    m_text_sect(text_sect),
+    m_text_sect_remote_addr(text_sect_remote_addr)
 {
     ASSERT(m_inst_code);
     ASSERT(m_cov_buf);

@@ -43,6 +43,11 @@ namespace dasm {
         size_t              addr = 0;
         uint32_t            scale = 0;
         uint8_t             opcode_data[DASM_MAX_OPCODE_LEN];
+
+        size_t              code_sect_orig = 0;
+        size_t              code_sect_new = 0;
+        size_t              code_sect_size = 0;
+
         xed_reg_enum_t      reg_base = XED_REG_INVALID;
         xed_reg_enum_t      reg_index = XED_REG_INVALID;
         xed_reg_enum_t      reg0 = XED_REG_INVALID;
@@ -59,6 +64,8 @@ namespace dasm {
          */
         opcode(){};
         opcode(size_t data, size_t addr = 0);
+        opcode(size_t data, size_t addr, size_t code_sect_orig, 
+                size_t code_sect_new, size_t code_sect_size);
 
         uint8_t* rebuild();
         size_t rebuild_to_new_addr(
@@ -89,6 +96,8 @@ namespace dasm {
              */
             opcode* get(size_t ptr);
             opcode* get(size_t data, size_t addr);
+            opcode* get(size_t data, size_t addr, size_t code_sect_orig,
+                    size_t code_sect_new, size_t code_sect_size);
 
             /*
              * Cleans all the resources
