@@ -23,9 +23,7 @@ simple_call:
 
 jmp_dd_test:
     jmp [rel jmp_dd]
-    int3
-    int3
-    int3
+    ud2
 .jmp_dd_next:
     ret
     
@@ -44,7 +42,7 @@ simple_cond_in_code:
     mov eax, 1
     ret
 .false:
-    int3
+    ud2
     xor eax, eax
     ret
 
@@ -56,22 +54,21 @@ simple_cond:
     mov eax, 1
     ret
 .false:
+    ud2
     xor eax, eax
     ret
 
 simple_lea:
     lea rax, [rel some_text]
+    mov eax, [rax]
+    cmp eax, 'aaaa'
+    je .true
+    ud2
+.true:
     ret
 
 simplest:
     nop
-    int3
-    nop
-    int3
-    nop
-    int3
-    nop
-    int3
     mov eax, eax
     xor rax, rax
     inc rax
@@ -84,8 +81,13 @@ WinMain:
     call simple_loop
     cmp ecx, 0
     jz .simple_loop_ok
-    int3
+    ud2
 .simple_loop_ok:
+
+    call simple_cond_in_code
+    call simple_cond
+    call simple_lea
+    call simplest
 
     xor eax, eax
     ret

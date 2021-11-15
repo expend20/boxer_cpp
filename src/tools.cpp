@@ -210,6 +210,10 @@ namespace tools {
         CONTEXT ctx;
         ctx.ContextFlags = CONTEXT_ALL;
         auto b = GetThreadContext(thread, &ctx);
+        if (!b) {
+            SAY_INFO("Can't get threads context handle: %x, err: %s\n",
+                    thread, helper::getLastErrorAsString().c_str());
+        }
         ASSERT(b);
 
 #ifdef _WIN64

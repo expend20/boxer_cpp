@@ -40,6 +40,7 @@ class mem_tool {
         size_t make_executable();
         size_t make_non_executable();
         size_t restore_prev_protection();
+        HANDLE get_proc() { return m_proc; };
 
     private:
         std::vector<uint8_t> m_data;

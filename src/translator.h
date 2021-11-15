@@ -40,7 +40,7 @@ class translator {
 
         void set_fix_dd_refs() { m_opts.fix_dd_refs = true; };
         void set_debug() { m_opts.debug = true; };
-        void set_disasm() { m_opts.debug = true; };
+        void set_disasm() { m_opts.disasm = true; };
 
     private:
         mem_tool*         m_inst_code = NULL;

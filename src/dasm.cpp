@@ -3,6 +3,8 @@
 
 #define OPCODE_MAX_LEN 0x20
 
+bool g_debug = false;
+
 bool dasm::opcode::is_iclass_jxx() {
     auto res = false;
     switch (iclass) {
@@ -78,11 +80,12 @@ bool dasm::opcode::fix_branch_disp(size_t new_addr){
         auto tgt_addr = addr + branch_disp + size_orig;
         auto branch_disp_new = tgt_addr - 
             (new_addr + (size_new ? size_new : size_orig));
-        SAY_DEBUG("tgt_addr %p, new_addr %p, size_orig %x, "\
-                "size_new %x, orig_disp %p, new_disp %x\n", 
-                tgt_addr, new_addr, size_orig, size_new, 
-                branch_disp, 
-                branch_disp_new);
+        if (g_debug)
+            SAY_DEBUG("tgt_addr %p, new_addr %p, size_orig %x, "\
+                    "size_new %x, orig_disp %p, new_disp %x\n", 
+                    tgt_addr, new_addr, size_orig, size_new, 
+                    branch_disp, 
+                    branch_disp_new);
         xed_encoder_request_set_branch_displacement(&xedd, branch_disp_new, 4);
         return true;
     }
@@ -94,15 +97,17 @@ bool dasm::opcode::fix_mem_disp(size_t new_addr){
         auto tgt_addr = addr + mem_disp + size_orig;
         if (tgt_addr >= code_sect_orig && 
                 tgt_addr < (code_sect_orig + code_sect_size)) {
-            SAY_DEBUG("Referenced memory is in code section\n");
+            if (g_debug)
+                SAY_DEBUG("Referenced memory is in code section\n");
             tgt_addr = tgt_addr - code_sect_orig + code_sect_new;
         }
         auto new_addr_end = new_addr + (size_new ? size_new : size_orig);
         auto new_mem_disp = tgt_addr -  new_addr_end;
-        SAY_DEBUG("tgt_addr %p, new_addr %p, new_addr_end %p, size_orig %x, "\
-                "size_new %x, orig_disp %p, new_disp %x\n", 
-                tgt_addr, new_addr, new_addr_end, size_orig, size_new, mem_disp, 
-                new_mem_disp);
+        if (g_debug)
+            SAY_DEBUG("tgt_addr %p, new_addr %p, new_addr_end %p, "
+                    "size_orig %x, size_new %x, orig_disp %p, new_disp %x\n", 
+                    tgt_addr, new_addr, new_addr_end, size_orig, size_new, 
+                    mem_disp, new_mem_disp);
         xed_encoder_request_set_memory_displacement(
                 &xedd, new_mem_disp, mem_disp_width);
         ASSERT(mem_disp_width == 4);
@@ -110,56 +115,6 @@ bool dasm::opcode::fix_mem_disp(size_t new_addr){
     }
     return false;
 }
-
-//bool dasm::opcode::make_jxx_32bits(size_t new_addr){
-//    if (branch_disp_width) {
-//        //SAY_INFO("Branch disp width %x %x %x\n",
-//        //        branch_disp,
-//        //        branch_disp_width,
-//        //        branch_disp_addr);
-//
-//        if (branch_disp_width != 4) {
-//            uint8_t buf[0x20];
-//            //SAY_INFO("Branch disp width changed to 4\n");
-//
-//            // prebuild opcode to get new size
-//            xed_encoder_request_set_branch_displacement(
-//                    &xedd, branch_disp, 4);
-//            auto r = xed_encode(&xedd, buf, sizeof(buf), &size_new);
-//            ASSERT(r == XED_ERROR_NONE);
-//
-//        }
-//        return true;
-//    }
-//    return false;
-//}
-
-//bool dasm::opcode::fix_rip_rel(size_t new_addr){
-//    if (mem_disp_width && reg_base == XED_REG_RIP) {
-//        //SAY_INFO("addr/memdisp/size %p/%p/%p\n", addr, mem_disp, size);
-//        auto tgt_addr = addr + mem_disp + size_orig;
-//        auto new_addr_end = new_addr + (size_new ? size_new : size_orig);
-//        int32_t new_mem_disp = tgt_addr -  new_addr_end;
-//        SAY_INFO("tgt_addr %p, new_addr %p, new_addr_end %p, size_orig %x, "\
-//                "size_new %x, orig_disp %p, new_disp %p\n", 
-//                tgt_addr, new_addr, new_addr_end, size_orig, size_new, mem_disp, 
-//                new_mem_disp);
-//
-//        ASSERT(mem_disp_width == 4);
-//
-//        // let's check if new opcode has the same size
-//        auto r = xed_encode(&xedd, buf, sizeof(buf), &size_new);
-//        ASSERT(r == XED_ERROR_NONE);
-//        if (size_new != size_orig) {
-//        }
-//
-//        xed_encoder_request_set_memory_displacement(
-//                &xedd, new_mem_disp, mem_disp_width);
-//
-//        return true;
-//    }
-//    return false;
-//}
 
 dasm::maker::maker() 
 {

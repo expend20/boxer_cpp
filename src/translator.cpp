@@ -123,6 +123,9 @@ size_t translator::instrument(size_t addr)
 
     auto rip = addr;
     size_t bb_start = 0;
+    size_t inst_start_offset = m_inst_offset;
+    size_t inst_start_ptr = m_inst_code->addr_remote() + m_inst_offset;
+    size_t inst_count = 0;
     while(1) {
         auto remote_inst = m_inst_code->addr_remote() + m_inst_offset;
         // should instrument instruction
@@ -146,8 +149,7 @@ size_t translator::instrument(size_t addr)
         auto op = m_dasm_cache.get(local_addr, rip, m_text_sect_remote_addr,
                 m_text_sect->addr_remote(), m_text_sect->size());
 
-        // TODO: debug code only
-        if (m_opts.disasm)
+        if (m_opts.disasm || m_opts.debug)
         {
             char buf[128];
             auto r = xed_format_context(XED_SYNTAX_INTEL, 
@@ -168,6 +170,7 @@ size_t translator::instrument(size_t addr)
                 remote_inst);
         ASSERT(inst_sz);
         m_inst_offset += inst_sz;
+        inst_count += 1;
 
         if (op->branch_disp_width) {
             // keep track of jumps, while them are not poiting to the 
@@ -186,6 +189,7 @@ size_t translator::instrument(size_t addr)
             break;
         }
         if (op->is_iclass_jxx() 
+                //|| inst_count >= 1
                 //|| op->category == XED_CATEGORY_CALL
                 ) {
             // place new jump to keep code valid
@@ -202,6 +206,11 @@ size_t translator::instrument(size_t addr)
     if (m_opts.fix_dd_refs)
         fix_dd_refs();
     m_inst_code->commit();
+
+    auto inst_size = m_inst_offset - inst_start_offset;
+    auto r = FlushInstructionCache(m_inst_code->get_proc(), 
+            (void*)inst_start_ptr, inst_size
+            );
 
     return m_remote_orig_to_inst_bb[addr];
 }

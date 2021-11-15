@@ -22,6 +22,8 @@ struct instrumenter_options {
     bool is_int3_inst = false;
     bool fix_dd_refs = false;
     bool debug = false;
+    bool translator_debug = false;
+    bool translator_disasm = false;
 };
 
 class instrumenter: public idebug_handler {
@@ -37,6 +39,8 @@ class instrumenter: public idebug_handler {
         void set_int3_inst() { m_opts.is_int3_inst = true; };
         void set_fix_dd_refs() { m_opts.fix_dd_refs = true; };
         void set_debug() { m_opts.debug = true; };
+        void set_trans_debug() { m_opts.translator_debug = true; };
+        void set_trans_disasm() { m_opts.translator_disasm = true; };
 
     private:
 
@@ -51,6 +55,7 @@ class instrumenter: public idebug_handler {
     private:
         instrumenter_stats m_stats = {0};
         debugger* m_debugger = NULL;
+        DEBUG_EVENT* m_dbg_event = NULL;
 
         std::vector<std::string> m_modules_to_instrument;
         std::vector<pehelper::pe> m_modules;
@@ -64,6 +69,8 @@ class instrumenter: public idebug_handler {
         std::map<size_t, mem_tool> m_base_to_cov;
         std::map<size_t, mem_tool> m_base_to_metadata;
         std::map<size_t, translator> m_base_to_translator;
+
+        std::map<DWORD, HANDLE> m_tid_to_handle;
 
         instrumenter_options m_opts;
 

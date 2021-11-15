@@ -13,6 +13,18 @@ int main(int argc, const char** argv)
     
     InitLogs(argc, argv);
 
+    if (argc == 1 || GetBinaryOption("-h", argc, argv, false) ||
+            GetBinaryOption("--help", argc, argv, false)) {
+        SAY_INFO_RAW("Usage:\n\t%s --cov <mod> --cmd <cmd line>\n", argv[0]);
+        SAY_INFO_RAW("Instrumentation options:\n\t"
+                "--inst_int3 --fix_dd_refs"
+                "\n");
+        SAY_INFO_RAW("Debug options:\n\t"
+                "--disasm --inst_debug --trans_debug"
+                "\n");
+        return -1;
+    }
+
     auto ins = instrumenter();
     std::vector<const char*> cov_mods;
     GetOptionAll("--cov", argc, argv, cov_mods);
@@ -24,11 +36,7 @@ int main(int argc, const char** argv)
     for (auto &mod: cov_mods) {
         ins.add_module(mod);
     }
-    auto is_inst_debug = GetBinaryOption("--inst_debug", argc, argv, false);
-    if (is_inst_debug) {
-        SAY_INFO("inst_debug = true\n");
-        ins.set_debug();
-    }
+
     auto is_inst_int3 = GetBinaryOption("--inst_int3", argc, argv, true);
     if (is_inst_int3) {
         SAY_INFO("inst_int3 = true\n");
@@ -38,6 +46,22 @@ int main(int argc, const char** argv)
     if (is_fix_dd_refs) {
         SAY_INFO("fix_dd_refs = true\n");
         ins.set_fix_dd_refs();
+    }
+
+    auto is_inst_debug = GetBinaryOption("--inst_debug", argc, argv, false);
+    if (is_inst_debug) {
+        SAY_INFO("inst_debug = true\n");
+        ins.set_debug();
+    }
+    auto is_trans_debug = GetBinaryOption("--trans_debug", argc, argv, false);
+    if (is_trans_debug) {
+        SAY_INFO("is_trans_debug = true\n");
+        ins.set_trans_debug();
+    }
+    auto is_disasm = GetBinaryOption("--disasm", argc, argv, false);
+    if (is_disasm) {
+        SAY_INFO("disasm = true\n");
+        ins.set_trans_disasm();
     }
 
     auto cmd = GetOption("--cmd", argc, argv);

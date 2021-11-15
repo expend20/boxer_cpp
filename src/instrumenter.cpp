@@ -1,4 +1,5 @@
 #include "instrumenter.h"
+#include "common.h"
 #include "pe.h"
 
 #include "Say.h"
@@ -6,6 +7,7 @@
 
 // TODO: merge to one should_translate
 bool instrumenter::should_translate_int3(size_t addr) {
+    __debugbreak();
     for (auto &sect: m_sections_patched) {
         auto start = sect->data.addr_remote();
         auto end = start + sect->data.size();
@@ -39,25 +41,18 @@ bool instrumenter::should_translate_int3(size_t addr) {
             else {
             }
 
-            // TODO: debug only branch
-            {
+            if (m_opts.debug) {
                 CONTEXT ctx;
                 ctx.ContextFlags = CONTEXT_ALL;
                 auto r = GetThreadContext(m_debugger->get_proc_info()->hThread,
                         &ctx);
                 ASSERT(r);
-                if (m_opts.debug) 
-                    SAY_DEBUG("redirecting %p(%p) -> %p\n", 
-                            addr, ctx.Rip, inst_addr);
+                SAY_DEBUG("Redirecting %p(%p) -> %p\n", 
+                        addr, ctx.Rip, inst_addr);
             }
 
             tools::update_thread_rip(m_debugger->get_proc_info()->hThread,
                     inst_addr);
-
-            // TODO: realize if we really need that
-            //r = FlushInstructionCache(
-            //        m_debugger->get_proc_info()->hProcess, (void*)(addr-1), 2);
-            //ASSERT(r);
 
             return true;
         }
@@ -100,20 +95,27 @@ bool instrumenter::should_translate_dep_av(size_t addr)
             else {
             }
 
-            // TODO: debug only branch
+            // TODO: review all code with pid/tid references in mind
+            auto hThread = m_tid_to_handle[m_dbg_event->dwThreadId];
+            if (!hThread) {
+                hThread = OpenThread(THREAD_ALL_ACCESS, FALSE, 
+                        m_dbg_event->dwThreadId);
+                ASSERT(hThread);
+                m_tid_to_handle[m_dbg_event->dwThreadId] = hThread;
+            }
+            if (m_opts.debug) 
             {
                 CONTEXT ctx;
                 ctx.ContextFlags = CONTEXT_ALL;
-                auto r = GetThreadContext(m_debugger->get_proc_info()->hThread,
-                        &ctx);
+                auto r = GetThreadContext(hThread, &ctx);
                 ASSERT(r);
-                if (m_opts.debug) 
-                    SAY_DEBUG("redirecting %p(%p) -> %p\n", 
-                            addr, ctx.Rip, inst_addr);
+                ASSERT(addr == ctx.Rip);
+                SAY_DEBUG("Redirecting exception dep %p (rip %p) -> %p\n", 
+                        addr, ctx.Rip, inst_addr);
+
             }
 
-            tools::update_thread_rip(m_debugger->get_proc_info()->hThread,
-                    inst_addr);
+            tools::update_thread_rip(hThread, inst_addr);
 
             // TODO: realize if we really need that
             //r = FlushInstructionCache(
@@ -211,14 +213,22 @@ void instrumenter::instrument_module_int3(size_t addr, const char* name)
     // check 2gb limit, for relative data access
     ASSERT((meta_buf + meta_buf_size) - addr < 0x7fffffff);
 
-    m_base_to_translator[addr] = translator(&m_base_to_inst[addr],
+    auto trans = translator(&m_base_to_inst[addr],
             &m_base_to_cov[addr],
             &m_base_to_metadata[addr],
-            &m_base_to_shadow[addr],
+            shadow_code_data,
             code_section->data.addr_remote());
 
+    if (m_opts.translator_debug)
+        trans.set_debug();
+
+    if (m_opts.translator_disasm)
+        trans.set_disasm();
+
     if (m_opts.fix_dd_refs)
-        m_base_to_translator[addr].set_fix_dd_refs();
+        trans.set_fix_dd_refs();
+
+    m_base_to_translator[addr] = trans;
 }
 
 void instrumenter::instrument_module(size_t addr, const char* name) 
@@ -277,14 +287,22 @@ void instrumenter::instrument_module(size_t addr, const char* name)
     // check 2gb limit, for relative data access
     ASSERT((meta_buf + meta_buf_size) - addr < 0x7fffffff);
 
-    m_base_to_translator[addr] = translator(&m_base_to_inst[addr],
+    auto trans = translator(&m_base_to_inst[addr],
             &m_base_to_cov[addr],
             &m_base_to_metadata[addr],
             &code_section->data,
             code_section->data.addr_remote());
 
+    if (m_opts.translator_debug)
+        trans.set_debug();
+
+    if (m_opts.translator_disasm)
+        trans.set_disasm();
+
     if (m_opts.fix_dd_refs)
-        m_base_to_translator[addr].set_fix_dd_refs();
+        trans.set_fix_dd_refs();
+
+    m_base_to_translator[addr] = trans;
 }
 
 bool instrumenter::should_instrument_module(const char* name)
@@ -394,7 +412,7 @@ DWORD instrumenter::handle_exception(EXCEPTION_DEBUG_INFO* dbg_info)
         }
         default: {
             // TODO:
-            SAY_ERROR("Invalid exception code %x",
+            SAY_ERROR("Invalid exception code %x\n",
                     rec->ExceptionCode);
         }
     }
@@ -403,7 +421,7 @@ DWORD instrumenter::handle_exception(EXCEPTION_DEBUG_INFO* dbg_info)
 
 void instrumenter::print_stats() 
 {
-    SAY_INFO("instrumenter stats: \n"
+    SAY_INFO("Instrumenter stats: \n"
             "%20d dbg_callbaks\n"
             "%20d exceptions\n"
             "%20d breakpoints\n"
@@ -422,12 +440,25 @@ void instrumenter::print_stats()
 DWORD instrumenter::handle_debug_event(DEBUG_EVENT* dbg_event,
         debugger* debugger)
 {
-    if (m_opts.debug)
-        SAY_DEBUG("instrumentor::handle_debug_event: %x\n", 
-                dbg_event->dwDebugEventCode);
+    if (m_opts.debug) {
+        SAY_DEBUG("Instrumentor::handle_debug_event: %x / %x\n", 
+                dbg_event->dwDebugEventCode,
+                m_stats.dbg_callbaks);
+        if (m_stats.dbg_callbaks > 0x10000) {
+            // TODO:
+            {
+                SAY_INFO("Stopping at %x iteration\n", m_stats.dbg_callbaks);
+                auto pi = m_debugger->get_proc_info();
+                tools::write_minidump("exit_process.dmp", pi, NULL);
+                print_stats();
+                m_debugger->stop();
+            }
+        }
+    }
     m_debugger = debugger;
+    m_dbg_event = dbg_event;
     m_stats.dbg_callbaks++;
-    auto continue_status = DBG_EXCEPTION_HANDLED;
+    auto continue_status = DBG_EXCEPTION_NOT_HANDLED;
 
     switch (dbg_event->dwDebugEventCode) {
         case CREATE_PROCESS_DEBUG_EVENT: {
