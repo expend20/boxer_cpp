@@ -5,62 +5,7 @@
 #include "Say.h"
 #include "tools.h"
 
-// TODO: merge to one should_translate
-bool instrumenter::should_translate_int3(size_t addr) {
-    __debugbreak();
-    for (auto &sect: m_sections_patched) {
-        auto start = sect->data.addr_remote();
-        auto end = start + sect->data.size();
-        if (addr >= start && addr < end) {
-
-            m_stats.rip_redirections++;
-            if (m_opts.debug)
-                SAY_DEBUG("That's we patched the code %p\n", addr);
-            // That's we've patched the code, let's check if it's already 
-            // instrumented
-            size_t mod_base = 0;
-            for (auto &m: m_modules) {
-                if (m.get_remote_addr() == start - 0x1000) {
-                    mod_base = start - 0x1000;
-                    break;
-                }
-            }
-            ASSERT(mod_base);
-
-            auto trans = &m_base_to_translator[mod_base];
-            ASSERT(trans);
-
-            size_t inst_addr = trans->remote_orig_to_inst_bb(addr);
-            if (!inst_addr) { 
-                if (m_opts.debug) 
-                    SAY_DEBUG("Address not found, instrumenting...\n");
-                inst_addr = trans->instrument(addr);
-                ASSERT(inst_addr);
-                m_stats.translator_called++;
-            }
-            else {
-            }
-
-            if (m_opts.debug) {
-                CONTEXT ctx;
-                ctx.ContextFlags = CONTEXT_ALL;
-                auto r = GetThreadContext(m_debugger->get_proc_info()->hThread,
-                        &ctx);
-                ASSERT(r);
-                SAY_DEBUG("Redirecting %p(%p) -> %p\n", 
-                        addr, ctx.Rip, inst_addr);
-            }
-
-            tools::update_thread_rip(m_debugger->get_proc_info()->hThread,
-                    inst_addr);
-
-            return true;
-        }
-    }
-    return false;
-}
-
-bool instrumenter::should_translate_dep_av(size_t addr) 
+bool instrumenter::should_translate(size_t addr) 
 {
     for (auto &sect: m_sections_patched) {
         auto start = sect->data.addr_remote();
@@ -72,6 +17,7 @@ bool instrumenter::should_translate_dep_av(size_t addr)
                 SAY_DEBUG("That's we patched the code %p\n", addr);
             // That's we've patched the code, let's check if it's already 
             // instrumented
+            // FIXME: 0x1000 offset shouldn't be hardcoded
             size_t mod_base = 0;
             for (auto &m: m_modules) {
                 if (m.get_remote_addr() == start - 0x1000) {
@@ -109,18 +55,24 @@ bool instrumenter::should_translate_dep_av(size_t addr)
                 ctx.ContextFlags = CONTEXT_ALL;
                 auto r = GetThreadContext(hThread, &ctx);
                 ASSERT(r);
-                ASSERT(addr == ctx.Rip);
-                SAY_DEBUG("Redirecting exception dep %p (rip %p) -> %p\n", 
+                SAY_DEBUG("Redirecting %s exception %p (rip %p) -> %p\n", 
+                        m_opts.is_int3_inst ? "int3" : "dep",
                         addr, ctx.Rip, inst_addr);
-
+                if (m_opts.is_int3_inst) {
+                    ASSERT(addr == ctx.Rip - 1);
+                }
+                else {
+                    ASSERT(addr == ctx.Rip);
+                }
             }
 
-            tools::update_thread_rip(hThread, inst_addr);
-
-            // TODO: realize if we really need that
-            //r = FlushInstructionCache(
-            //        m_debugger->get_proc_info()->hProcess, (void*)(addr-1), 2);
-            //ASSERT(r);
+            if (m_opts.is_int3_inst) {
+                // TODO: place jump if possible
+                tools::update_thread_rip(hThread, inst_addr);
+            }
+            else {
+                tools::update_thread_rip(hThread, inst_addr);
+            }
 
 
             return true;
@@ -157,7 +109,7 @@ void instrumenter::instrument_module_int3(size_t addr, const char* name)
             hproc,
             img_end,
             shadow_code_size,
-            PAGE_EXECUTE_READ);
+            PAGE_READWRITE);
     ASSERT(shadow_code_ptr);
 	m_base_to_shadow[addr] = mem_tool(hproc, shadow_code_ptr, shadow_code_size);
     auto shadow_code_data = &m_base_to_shadow[addr];
@@ -387,7 +339,7 @@ DWORD instrumenter::handle_exception(EXCEPTION_DEBUG_INFO* dbg_info)
                     rec->ExceptionInformation[0] == 8 && // DEP
                     rec->ExceptionInformation[1]) {
                 if (!m_opts.is_int3_inst &&
-                        should_translate_dep_av(rec->ExceptionInformation[1]))
+                        should_translate(rec->ExceptionInformation[1]))
                     continue_status = DBG_CONTINUE;
             }
             break;
@@ -399,7 +351,7 @@ DWORD instrumenter::handle_exception(EXCEPTION_DEBUG_INFO* dbg_info)
                 on_first_breakpoint();
             } else {
                 if (m_opts.is_int3_inst &&
-                        should_translate_int3((size_t)rec->ExceptionAddress)) {
+                        should_translate((size_t)rec->ExceptionAddress)) {
                     continue_status = DBG_CONTINUE;
                 }
             }

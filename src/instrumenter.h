@@ -49,8 +49,7 @@ class instrumenter: public idebug_handler {
         bool should_instrument_module(const char* name);
         void instrument_module(size_t addr, const char* name);
         void instrument_module_int3(size_t addr, const char* name);
-        bool should_translate_dep_av(size_t addr);
-        bool should_translate_int3(size_t addr);
+        bool should_translate(size_t addr);
 
     private:
         instrumenter_stats m_stats = {0};
