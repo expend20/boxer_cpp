@@ -81,7 +81,7 @@ void InitLogs(int argc, const char **argv)
             SAY_FATAL("Unknown log level: %s\n", logLevel);
         }
     }
-    const char *logType = GetOption("--logType", argc, argv);
+    const char *logType = GetOption("--log_type", argc, argv);
 
     if (logType) {
         if (!strcmp(logType, "debug")) {
