@@ -138,8 +138,8 @@ size_t translator::instrument(size_t addr)
         // disasm & cache
         auto offset = rip - m_text_sect_remote_addr;
         auto local_addr = m_text_sect->addr_loc() + offset;
-        SAY_DEBUG("Disasm (%x) local: %p remote: %p\n", 
-                offset, local_addr, rip);
+        SAY_DEBUG("Disasm (%x) local: %p remote: %p text sect remote: %p\n", 
+                offset, local_addr, rip, m_text_sect_remote_addr);
         auto op = m_dasm_cache.get(local_addr, rip, m_text_sect_remote_addr,
                 m_text_sect->addr_remote(), m_text_sect->size());
 
@@ -176,6 +176,9 @@ size_t translator::instrument(size_t addr)
             break;
         }
         if (op->iclass == XED_ICLASS_JMP) {
+            break;
+        }
+        if (op->iclass == XED_ICLASS_INT3) {
             break;
         }
         if (op->is_iclass_jxx() 

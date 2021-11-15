@@ -210,7 +210,6 @@ void instrumenter::instrument_module_int3(size_t addr, const char* name)
             addr);
 }
 
-
 void instrumenter::instrument_module(size_t addr, const char* name) 
 {
     LOG_DEBUG("Instrumenting %p %s...\n", addr, name);
@@ -225,6 +224,8 @@ void instrumenter::instrument_module(size_t addr, const char* name)
     ASSERT(code_section);
     code_section->data.make_non_executable();
     m_sections_patched.push_back(code_section);
+    SAY_DEBUG("code section local: %p %x\n", code_section->data.addr_loc(),
+            code_section->data.size());
 
     // get instrumentation buffer
     auto opt_head = pe->get_nt_headers()->OptionalHeader;
@@ -267,7 +268,7 @@ void instrumenter::instrument_module(size_t addr, const char* name)
             &m_base_to_cov[addr],
             &m_base_to_metadata[addr],
             &code_section->data,
-            addr);
+            code_section->data.addr_remote());
 }
 
 bool instrumenter::should_instrument_module(const char* name)
@@ -326,6 +327,7 @@ DWORD instrumenter::handle_exception(EXCEPTION_DEBUG_INFO* dbg_info)
                     &dbg_info->ExceptionRecord);
         }
 
+        __debugbreak();
         exit(0);
     }
     auto continue_status = DBG_EXCEPTION_NOT_HANDLED;
@@ -345,10 +347,10 @@ DWORD instrumenter::handle_exception(EXCEPTION_DEBUG_INFO* dbg_info)
             if (m_stats.breakpoints == 1) {
                 // if it's first breakpoint, it's debugger's one
                 on_first_breakpoint();
+            } else {
+                if (should_translate_int3((size_t)rec->ExceptionAddress))
+                    continue_status = DBG_CONTINUE;
             }
-
-            if (should_translate_int3((size_t)rec->ExceptionAddress))
-                continue_status = DBG_CONTINUE;
             break;
         }
         case STATUS_STACK_OVERFLOW: {
