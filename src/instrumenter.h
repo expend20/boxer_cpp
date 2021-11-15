@@ -10,12 +10,18 @@
 #include <vector>
 
 struct instrumenter_stats {
-    size_t dbg_callbaks;
-    size_t exceptions;
-    size_t breakpoints;
-    size_t avs;
-    size_t translator_called;
-    size_t rip_redirections;
+    size_t dbg_callbaks = 0;
+    size_t exceptions = 0;
+    size_t breakpoints = 0;
+    size_t avs = 0;
+    size_t translator_called = 0;
+    size_t rip_redirections = 0;
+};
+
+struct instrumenter_options {
+    bool is_int3_inst = false;
+    bool fix_dd_refs = false;
+    bool debug = false;
 };
 
 class instrumenter: public idebug_handler {
@@ -26,6 +32,11 @@ class instrumenter: public idebug_handler {
                 debugger* debuger) override;
         void add_module(const char* module);
         void print_stats();
+
+        // opts setter
+        void set_int3_inst() { m_opts.is_int3_inst = true; };
+        void set_fix_dd_refs() { m_opts.fix_dd_refs = true; };
+        void set_debug() { m_opts.debug = true; };
 
     private:
 
@@ -54,7 +65,7 @@ class instrumenter: public idebug_handler {
         std::map<size_t, mem_tool> m_base_to_metadata;
         std::map<size_t, translator> m_base_to_translator;
 
-        bool m_is_int3_inst = false;
+        instrumenter_options m_opts;
 
 };
 

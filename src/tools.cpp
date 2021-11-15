@@ -213,12 +213,12 @@ namespace tools {
         ASSERT(b);
 
 #ifdef _WIN64
-        SAY_DEBUG("Thread's current rip = %p (set to %p), rcx = %p, rdx = %p\n", 
-                ctx.Rip, pc, ctx.Rcx, ctx.Rdx);
+        //SAY_DEBUG("Thread's current rip = %p (set to %p), rcx = %p, rdx = %p\n", 
+        //        ctx.Rip, pc, ctx.Rcx, ctx.Rdx);
         ctx.Rip = pc;
 #else
-        SAY_DEBUG("Thread's current eip = %p (set to %p), ecx = %p, edx = %p\n", 
-                ctx.Eip, pc, ctx.Ecx, ctx.Edx);
+        //SAY_DEBUG("Thread's current eip = %p (set to %p), ecx = %p, edx = %p\n", 
+        //        ctx.Eip, pc, ctx.Ecx, ctx.Edx);
         ctx.Eip = pc;
 #endif
         b = SetThreadContext(thread, &ctx);

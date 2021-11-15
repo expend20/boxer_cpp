@@ -5,20 +5,20 @@ section .data
 
 some_text: 
     db 'aaaaaaa', 0
-some_var 
+some_var:
     dd 0x12345678
-jmp_dd 
+jmp_dd:
     dq jmp_dd_test.jmp_dd_next
 
 section .text
 
-some_var_in_text
+some_var_in_text:
     dd 0x12345678
 
 simple_call:
 
     call .callme
-.callme
+.callme:
     ret
 
 jmp_dd_test:
@@ -26,25 +26,25 @@ jmp_dd_test:
     int3
     int3
     int3
-.jmp_dd_next
+.jmp_dd_next:
     ret
     
-loop:
+simple_loop:
     mov ecx, 10
-.loop
+.loop:
     dec ecx
     jnz .loop
     ret
 
-WinMain:
 simple_cond_in_code:
     mov eax, [rel some_var_in_text]
     cmp eax, 0x12345678
     jnz .false
-.true
+.true:
     mov eax, 1
     ret
-.false
+.false:
+    int3
     xor eax, eax
     ret
 
@@ -52,10 +52,10 @@ simple_cond:
     mov eax, [rel some_var]
     cmp eax, 0x12345678
     jnz .false
-.true
+.true:
     mov eax, 1
     ret
-.false
+.false:
     xor eax, eax
     ret
 
@@ -76,4 +76,18 @@ simplest:
     xor rax, rax
     inc rax
     ret
+
+WinMain:
+
+    call jmp_dd_test
+
+    call simple_loop
+    cmp ecx, 0
+    jz .simple_loop_ok
+    int3
+.simple_loop_ok:
+
+    xor eax, eax
+    ret
+
 

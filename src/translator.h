@@ -13,22 +13,13 @@
 #include <map>
 #include <set>
 
+struct translator_opts {
+    bool fix_dd_refs = false;
+    bool debug = false;
+    bool disasm = false;
+};
+
 class translator {
-
-    public:
-
-        mem_tool*         m_inst_code = NULL;
-        mem_tool*         m_cov_buf = NULL;
-        mem_tool*         m_metadata = NULL;
-        mem_tool*         m_text_sect = NULL;
-        size_t            m_inst_offset = 0;
-        size_t            m_cov_offset = 0;
-        size_t            m_text_sect_remote_addr = 0;
-        dasm::cached_code m_dasm_cache;
-
-        // Remote origin RIP to remote instrumented code
-        std::map<size_t, size_t> m_remote_orig_to_inst_bb;
-        std::set<size_t> m_remote_dd_refs;
 
     public:
 
@@ -46,5 +37,26 @@ class translator {
         void make_dword_inc_cov_hit();
         void make_dword_mov_cov_hit();
         void make_jump(size_t target_addr);
+
+        void set_fix_dd_refs() { m_opts.fix_dd_refs = true; };
+        void set_debug() { m_opts.debug = true; };
+        void set_disasm() { m_opts.debug = true; };
+
+    private:
+        mem_tool*         m_inst_code = NULL;
+        mem_tool*         m_cov_buf = NULL;
+        mem_tool*         m_metadata = NULL;
+        mem_tool*         m_text_sect = NULL;
+        size_t            m_inst_offset = 0;
+        size_t            m_cov_offset = 0;
+        size_t            m_text_sect_remote_addr = 0;
+        dasm::cached_code m_dasm_cache;
+        translator_opts   m_opts;
+
+        // Remote origin RIP to remote instrumented code
+        std::map<size_t, size_t> m_remote_orig_to_inst_bb;
+        std::set<size_t> m_remote_dd_refs;
+
         void fix_dd_refs();
+
 };

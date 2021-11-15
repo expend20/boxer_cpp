@@ -98,8 +98,9 @@ void translator::fix_dd_refs() {
         auto tgt_ref = disp + next_remote;
         auto inst_addr = remote_orig_to_inst_bb(tgt_ref);
         if (inst_addr) {
-            SAY_DEBUG("fixing dd ref at (next) %p to %p -> %p...\n", 
-                    next_remote, tgt_ref, inst_addr);
+            if (m_opts.debug)
+                SAY_DEBUG("Fixing dd ref at (next) %p to %p -> %p...\n", 
+                        next_remote, tgt_ref, inst_addr);
             uint32_t new_dd = inst_addr - next_remote;
             *(uint32_t*)loc_ptr = new_dd;
             m_remote_dd_refs.erase(remote_ptr);
@@ -128,8 +129,9 @@ size_t translator::instrument(size_t addr)
         if (!bb_start) {
             bb_start = remote_inst;
             m_remote_orig_to_inst_bb[rip] = remote_inst;
-            SAY_DEBUG("remote bb got instrumented %p -> %p\n", 
-                    rip, remote_inst);
+            if (m_opts.debug)
+                SAY_DEBUG("Remote bb got instrumented %p -> %p\n", 
+                        rip, remote_inst);
             //make_dword_inc_cov_hit();
             //make_dword_mov_cov_hit();
             remote_inst = m_inst_code->addr_remote() + m_inst_offset;
@@ -138,19 +140,21 @@ size_t translator::instrument(size_t addr)
         // disasm & cache
         auto offset = rip - m_text_sect_remote_addr;
         auto local_addr = m_text_sect->addr_loc() + offset;
-        SAY_DEBUG("Disasm (%x) local: %p remote: %p text sect remote: %p\n", 
-                offset, local_addr, rip, m_text_sect_remote_addr);
+        if (m_opts.debug)
+            SAY_DEBUG("Disasm (%x) local: %p remote: %p text sect remote: %p\n", 
+                    offset, local_addr, rip, m_text_sect_remote_addr);
         auto op = m_dasm_cache.get(local_addr, rip, m_text_sect_remote_addr,
                 m_text_sect->addr_remote(), m_text_sect->size());
 
         // TODO: debug code only
+        if (m_opts.disasm)
         {
             char buf[128];
             auto r = xed_format_context(XED_SYNTAX_INTEL, 
                     &op->xedd,
                     buf,
                     sizeof(buf), 0, 0, 0);
-            SAY_DEBUG("%p %p %-30s (Category: %s, iclass: %s)\n",
+            SAY_INFO("%p %p %-30s (Category: %s, iclass: %s)\n",
                     rip, 
                     remote_inst,
                     buf,
@@ -195,7 +199,8 @@ size_t translator::instrument(size_t addr)
         // continue the loop
         rip += op->size_orig;
     }
-    fix_dd_refs();
+    if (m_opts.fix_dd_refs)
+        fix_dd_refs();
     m_inst_code->commit();
 
     return m_remote_orig_to_inst_bb[addr];
