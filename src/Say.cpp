@@ -60,7 +60,7 @@ void say::sayType(SayType type) { g_sayType = type; }
 
 void InitLogs(int argc, const char **argv)
 {
-    const char *logLevel = GetOption("--logLevel", argc, argv);
+    const char *logLevel = GetOption("--log_level", argc, argv);
     if (logLevel) {
         if (!strcmp(logLevel, "debug")) {
             say::sayLevel(say::SayLevelDebug);
