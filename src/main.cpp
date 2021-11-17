@@ -20,7 +20,7 @@ int main(int argc, const char** argv)
                 "--inst_int3 --fix_dd_refs"
                 "\n");
         SAY_INFO_RAW("Debug options:\n\t"
-                "--disasm --inst_debug --trans_debug"
+                "--disasm --show_flow --inst_debug --trans_debug --single_step"
                 "\n");
         return -1;
     }
@@ -37,7 +37,7 @@ int main(int argc, const char** argv)
         ins.add_module(mod);
     }
 
-    auto is_inst_int3 = GetBinaryOption("--inst_int3", argc, argv, true);
+    auto is_inst_int3 = GetBinaryOption("--inst_int3", argc, argv, false);
     if (is_inst_int3) {
         SAY_INFO("inst_int3 = true\n");
         ins.set_int3_inst();
@@ -63,6 +63,19 @@ int main(int argc, const char** argv)
         SAY_INFO("disasm = true\n");
         ins.set_trans_disasm();
     }
+    auto is_single_step = GetBinaryOption(
+            "--single_step", argc, argv, false);
+    if (is_single_step) {
+        SAY_INFO("single_step = true\n");
+        ins.set_trans_single_step();
+    }
+    auto is_show_flow = GetBinaryOption(
+            "--show_flow", argc, argv, false);
+    if (is_show_flow) {
+        SAY_INFO("show_flow = true\n");
+        ins.set_show_flow();
+    }
+
 
     auto cmd = GetOption("--cmd", argc, argv);
     if (!cmd) {

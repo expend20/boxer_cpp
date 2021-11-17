@@ -22,8 +22,10 @@ struct instrumenter_options {
     bool is_int3_inst = false;
     bool fix_dd_refs = false;
     bool debug = false;
+    bool show_flow = false;
     bool translator_debug = false;
     bool translator_disasm = false;
+    bool translator_single_step = false;
 };
 
 class instrumenter: public idebug_handler {
@@ -39,8 +41,10 @@ class instrumenter: public idebug_handler {
         void set_int3_inst() { m_opts.is_int3_inst = true; };
         void set_fix_dd_refs() { m_opts.fix_dd_refs = true; };
         void set_debug() { m_opts.debug = true; };
+        void set_show_flow() { m_opts.show_flow = true; };
         void set_trans_debug() { m_opts.translator_debug = true; };
         void set_trans_disasm() { m_opts.translator_disasm = true; };
+        void set_trans_single_step() { m_opts.translator_single_step = true; };
 
     private:
 
@@ -50,6 +54,9 @@ class instrumenter: public idebug_handler {
         void instrument_module(size_t addr, const char* name);
         void instrument_module_int3(size_t addr, const char* name);
         bool should_translate(size_t addr);
+        void patch_references_to_section(pehelper::pe* module, 
+                pehelper::section* target_section, 
+                size_t shadow_sect_remote_start);
 
     private:
         instrumenter_stats m_stats = {0};

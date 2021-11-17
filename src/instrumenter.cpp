@@ -49,15 +49,18 @@ bool instrumenter::should_translate(size_t addr)
                 ASSERT(hThread);
                 m_tid_to_handle[m_dbg_event->dwThreadId] = hThread;
             }
-            if (m_opts.debug) 
+            if (m_opts.debug || m_opts.show_flow) 
             {
                 CONTEXT ctx;
                 ctx.ContextFlags = CONTEXT_ALL;
                 auto r = GetThreadContext(hThread, &ctx);
                 ASSERT(r);
-                SAY_DEBUG("Redirecting %s exception %p (rip %p) -> %p\n", 
-                        m_opts.is_int3_inst ? "int3" : "dep",
-                        addr, ctx.Rip, inst_addr);
+                SAY_INFO("Redirecting on exception %p -> %p; "
+                        "rax/rcx/rdx/r8/r9/rsp/rbp/rsi/rdi "
+                        "%p/%p/%p/%p/%p/%p/%p/%p/%p\n", 
+                        addr,  inst_addr,
+                        ctx.Rax, ctx.Rax, ctx.Rcx, ctx.Rdx, ctx.R8, ctx.R9,
+                        ctx.Rsp, ctx.Rbp, ctx.Rsi, ctx.Rdi);
                 if (m_opts.is_int3_inst) {
                     ASSERT(addr == ctx.Rip - 1);
                 }
@@ -79,6 +82,39 @@ bool instrumenter::should_translate(size_t addr)
         }
     }
     return false;
+}
+
+void instrumenter::patch_references_to_section(pehelper::pe* module, 
+        pehelper::section* target_section, 
+        size_t shadow_sect_remote_start){
+    for (auto i = 0; i < module->get_section_count(); i++) {
+        auto sect = module->get_section_by_idx(i);
+
+        size_t patches_in_sect = 0;
+        // due to VirturtualSize this restriction is relaxed
+        //ASSERT(sect->data.size() % sizeof(size_t) == 0);
+        size_t idx_max = sect->data.size() / sizeof(size_t);
+        size_t* data = (size_t*)sect->data.addr_loc();
+        size_t remote_start = target_section->data.addr_remote();
+        size_t remote_end = remote_start + target_section->data.size();
+        for (size_t idx = 0; idx < idx_max; idx++) {
+            size_t dd = data[idx];
+            if (dd >= remote_start && dd < remote_end) {
+                patches_in_sect++;
+                size_t offset = dd - remote_start;
+                size_t new_dd = shadow_sect_remote_start + offset;
+                data[idx] = new_dd; 
+                SAY_DEBUG("dq fixed %p[%p] = %p", 
+                        remote_start + idx * sizeof(size_t),
+                        dd,
+                        new_dd);
+            }
+        }
+        if (patches_in_sect) {
+            sect->data.commit();
+            SAY_DEBUG("\n");
+        }
+    }
 }
 
 // TODO: merge into instrument_module()
@@ -109,7 +145,7 @@ void instrumenter::instrument_module_int3(size_t addr, const char* name)
             hproc,
             img_end,
             shadow_code_size,
-            PAGE_READWRITE);
+            PAGE_READONLY);
     ASSERT(shadow_code_ptr);
 	m_base_to_shadow[addr] = mem_tool(hproc, shadow_code_ptr, shadow_code_size);
     auto shadow_code_data = &m_base_to_shadow[addr];
@@ -130,6 +166,10 @@ void instrumenter::instrument_module_int3(size_t addr, const char* name)
             0xcc,
             code_section->data.size());
     code_section->data.commit();
+    
+    // fix references to code from other sections
+    //patch_references_to_section(pe, 
+    //        code_section, shadow_code_data->addr_remote());
 
     // get instrumentation buffer
     size_t code_inst_size = img_size * 4;
@@ -177,8 +217,11 @@ void instrumenter::instrument_module_int3(size_t addr, const char* name)
     if (m_opts.translator_disasm)
         trans.set_disasm();
 
-    if (m_opts.fix_dd_refs)
+    if (m_opts.fix_dd_refs && !m_opts.translator_single_step)
         trans.set_fix_dd_refs();
+
+    if (m_opts.translator_single_step)
+        trans.set_single_step();
 
     m_base_to_translator[addr] = trans;
 }
@@ -251,8 +294,11 @@ void instrumenter::instrument_module(size_t addr, const char* name)
     if (m_opts.translator_disasm)
         trans.set_disasm();
 
-    if (m_opts.fix_dd_refs)
+    if (m_opts.fix_dd_refs && !m_opts.translator_single_step)
         trans.set_fix_dd_refs();
+
+    if (m_opts.translator_single_step)
+        trans.set_single_step();
 
     m_base_to_translator[addr] = trans;
 }
@@ -299,8 +345,8 @@ DWORD instrumenter::handle_exception(EXCEPTION_DEBUG_INFO* dbg_info)
         print_stats();
     }
 
-    if (m_opts.debug) {
-        SAY_DEBUG(
+    if (m_opts.debug || !dbg_info->dwFirstChance) {
+        SAY_INFO(
                 "Exception event: code %x | %s | %s, addr %p, flags %x, params %x"
                 ", is_int3 %d, dd_fix %d\n",
                 rec->ExceptionCode,
@@ -327,8 +373,6 @@ DWORD instrumenter::handle_exception(EXCEPTION_DEBUG_INFO* dbg_info)
         }
 
         print_stats();
-
-        __debugbreak();
         exit(0);
     }
     auto continue_status = DBG_EXCEPTION_NOT_HANDLED;
@@ -396,21 +440,21 @@ DWORD instrumenter::handle_debug_event(DEBUG_EVENT* dbg_event,
         SAY_DEBUG("Instrumentor::handle_debug_event: %x / %x\n", 
                 dbg_event->dwDebugEventCode,
                 m_stats.dbg_callbaks);
-        if (m_stats.dbg_callbaks > 0x10000) {
-            // TODO:
-            {
-                SAY_INFO("Stopping at %x iteration\n", m_stats.dbg_callbaks);
-                auto pi = m_debugger->get_proc_info();
-                tools::write_minidump("exit_process.dmp", pi, NULL);
-                print_stats();
-                m_debugger->stop();
-            }
-        }
+        //if (m_stats.dbg_callbaks > 0x10000) {
+        //    // TODO:
+        //    {
+        //        SAY_INFO("Stopping at %x iteration\n", m_stats.dbg_callbaks);
+        //        auto pi = m_debugger->get_proc_info();
+        //        tools::write_minidump("exit_process.dmp", pi, NULL);
+        //        print_stats();
+        //        m_debugger->stop();
+        //    }
+        //}
     }
     m_debugger = debugger;
     m_dbg_event = dbg_event;
     m_stats.dbg_callbaks++;
-    auto continue_status = DBG_EXCEPTION_NOT_HANDLED;
+    auto continue_status = DBG_CONTINUE;//DBG_EXCEPTION_NOT_HANDLED;
 
     switch (dbg_event->dwDebugEventCode) {
         case CREATE_PROCESS_DEBUG_EVENT: {
@@ -480,11 +524,24 @@ DWORD instrumenter::handle_debug_event(DEBUG_EVENT* dbg_event,
         }
         case OUTPUT_DEBUG_STRING_EVENT: {
             auto data = dbg_event->u.DebugString;
-            if (m_opts.debug) 
+            if (m_opts.debug)  {
                 SAY_INFO("Debug string event (is unicode %d, len = %d) %p\n", 
                         data.fUnicode,
                         data.nDebugStringLength,
                         data.lpDebugStringData);
+                auto str = mem_tool(m_debugger->get_proc_info()->hProcess,
+                        (size_t)data.lpDebugStringData,
+                        data.fUnicode ? data.nDebugStringLength * 2:
+                        data.nDebugStringLength);
+                if (data.fUnicode) {
+                    SAY_INFO("OutputDebugStringW called: %S\n", 
+                            (void*)str.addr_loc());
+                }
+                else {
+                    SAY_INFO("OutputDebugStringA called: %s\n", 
+                            (void*)str.addr_loc());
+                }
+            }
             break;
         }
         default:

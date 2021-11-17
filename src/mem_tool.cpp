@@ -1,4 +1,5 @@
 #include "mem_tool.h"
+#include "common.h"
 #include "say.h"
 
 #include <memoryapi.h>
@@ -36,6 +37,7 @@ size_t mem_tool::get_tgt_by_offset(size_t offset){
 size_t mem_tool::get_tgt_by_local(size_t loc){
     ASSERT(loc >= (size_t)&m_data[0]);
     ASSERT(loc < (size_t)&m_data[m_data.size() - 1]);
+        return -1;
 
     return get_tgt_by_offset(loc - (size_t)&m_data[0]);
 }
@@ -91,11 +93,16 @@ mem_tool::mem_tool(HANDLE process, size_t data, size_t len) {
 void mem_tool::commit() {
     SIZE_T rw = 0;
 
-    if (!WriteProcessMemory(m_proc, (void*)m_addr_remote, &m_data[0], m_data.size(),
-                &rw)){
-        SAY_FATAL("can't write process memory %x %p -> %p %x\n",
-                m_proc, &m_data[0], m_addr_remote, m_data.size());
+    change_protection(PAGE_READWRITE);
+
+    if (!WriteProcessMemory(m_proc, (void*)m_addr_remote, &m_data[0], 
+                m_data.size(), &rw)){
+        SAY_FATAL("Can't write process memory %x %p -> %p %x, err = %s\n",
+                m_proc, &m_data[0], m_addr_remote, m_data.size(),
+                helper::getLastErrorAsString().c_str());
     }
+
+    restore_prev_protection();
 
     ASSERT(rw == m_data.size());
 }
@@ -108,12 +115,11 @@ size_t mem_tool::change_protection(DWORD prot){
 
     if (!VirtualProtectEx(m_proc, (void*)m_addr_remote, m_data.size(),
                 prot, &m_oldProt)) {
-        SAY_FATAL("Can't protect memory %p:%x", m_addr_remote,
-                m_data.size());
-        return -1;
+        SAY_FATAL("Can't protect memory %p:%x, err %s", m_addr_remote,
+                m_data.size(), helper::getLastErrorAsString().c_str());
     } else {
 
-        SAY_DEBUG("section %p:%x changed protection from %x to %x\n",
+        SAY_DEBUG("Section %p:%x changed protection from %x to %x\n",
                 m_addr_remote, m_data.size(), m_oldProt, prot);
     }
 
@@ -123,12 +129,15 @@ size_t mem_tool::change_protection(DWORD prot){
 size_t mem_tool::restore_prev_protection(){
     DWORD newProt = 0;
 
-    SAY_DEBUG("restoring section protection %x %p:%p\n", m_oldProt,
+    SAY_DEBUG("Restoring section protection %x %p:%p\n", m_oldProt,
             m_addr_remote, m_data.size());
 
-    BOOL res = VirtualProtect((void*)m_addr_remote, m_data.size(), m_oldProt,
-            &newProt);
-    ASSERT(res);
+    BOOL res = VirtualProtectEx(m_proc, (void*)m_addr_remote, m_data.size(), 
+            m_oldProt, &newProt);
+    if (!res) {
+        SAY_FATAL("Can't restore memory prot %p:%x, err %s", m_addr_remote,
+                m_data.size(), helper::getLastErrorAsString().c_str());
+    }
 
     m_oldProt = newProt;
     return 0;

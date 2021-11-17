@@ -247,6 +247,15 @@ size_t   pehelper::pe::get_section_count(){
     return m_sections.size();
 }
 
+pehelper::section*  pehelper::pe::get_section_by_idx(size_t idx){
+    if (idx < m_sections.size()) {
+        return &m_sections[idx];
+    }
+    else {
+        return 0;
+    }
+}
+
 pehelper::section* pehelper::pe::get_section(size_t addr){
     for( auto el = m_sections.begin(); el != m_sections.end(); el++){
         size_t sectBegin = m_remote_addr + el->sect_head.VirtualAddress;

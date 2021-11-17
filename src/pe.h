@@ -82,6 +82,7 @@ namespace pehelper {
             size_t            get_section_count();
             section*          get_section(size_t addr);
             section*          get_section(std::string name);
+            section*          get_section_by_idx(size_t idx);
 
         #ifdef _WIN64
             runtime_function*  get_runtime_function(size_t rip);

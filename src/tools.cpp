@@ -33,10 +33,10 @@ namespace tools {
             PROCESS_INFORMATION* pi,
             EXCEPTION_RECORD* ex_rec) 
     {
-        CONTEXT ctx;
+        CONTEXT ctx = {0};
         ctx.ContextFlags = CONTEXT_ALL;
         auto b = GetThreadContext(pi->hThread, &ctx);
-        ASSERT(b);
+        //ASSERT(b);
 
         auto hfile = CreateFileA(path,
                GENERIC_READ | GENERIC_WRITE,

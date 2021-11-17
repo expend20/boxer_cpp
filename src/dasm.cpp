@@ -95,12 +95,14 @@ bool dasm::opcode::fix_branch_disp(size_t new_addr){
 bool dasm::opcode::fix_mem_disp(size_t new_addr){
     if (mem_disp_width && reg_base == XED_REG_RIP) {
         auto tgt_addr = addr + mem_disp + size_orig;
-        if (tgt_addr >= code_sect_orig && 
-                tgt_addr < (code_sect_orig + code_sect_size)) {
-            if (g_debug)
-                SAY_DEBUG("Referenced memory is in code section\n");
-            tgt_addr = tgt_addr - code_sect_orig + code_sect_new;
-        }
+        // TODO: it's not that easy :(
+        //if (tgt_addr >= code_sect_orig && 
+        //        tgt_addr < (code_sect_orig + code_sect_size)) {
+        //    if (g_debug)
+        //        SAY_DEBUG("Referenced memory is in code section\n");
+        //    __debugbreak();
+        //    tgt_addr = tgt_addr - code_sect_orig + code_sect_new;
+        //}
         auto new_addr_end = new_addr + (size_new ? size_new : size_orig);
         auto new_mem_disp = tgt_addr -  new_addr_end;
         if (g_debug)

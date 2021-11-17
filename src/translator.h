@@ -17,6 +17,7 @@ struct translator_opts {
     bool fix_dd_refs = false;
     bool debug = false;
     bool disasm = false;
+    bool single_step = false;
 };
 
 class translator {
@@ -41,6 +42,7 @@ class translator {
         void set_fix_dd_refs() { m_opts.fix_dd_refs = true; };
         void set_debug() { m_opts.debug = true; };
         void set_disasm() { m_opts.disasm = true; };
+        void set_single_step() { m_opts.single_step = true; };
 
     private:
         mem_tool*         m_inst_code = NULL;

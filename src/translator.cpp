@@ -188,11 +188,14 @@ size_t translator::instrument(size_t addr)
         if (op->iclass == XED_ICLASS_INT3) {
             break;
         }
-        if (op->is_iclass_jxx() 
-                //|| inst_count >= 1
-                //|| op->category == XED_CATEGORY_CALL
-                ) {
-            // place new jump to keep code valid
+        auto should_stop = false;
+
+        if (op->is_iclass_jxx()) should_stop = true;
+        if (m_opts.single_step) should_stop = true;
+        //|| op->category == XED_CATEGORY_CALL
+
+        if (should_stop) {
+            // place new jump to keep code linked
             auto tgt_addr = op->size_orig + op->addr;
             make_jump(tgt_addr);
             m_remote_dd_refs.insert(

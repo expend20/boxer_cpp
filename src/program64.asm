@@ -7,8 +7,12 @@ some_text:
     db 'aaaaaaa', 0
 some_var:
     dd 0x12345678
+    align 8 ; references to code should be aligned to pointer size
 jmp_dd:
     dq jmp_dd_test.jmp_dd_next
+    align 8
+code_ref_in_data:
+    dq data_sect_ref_to_code.ref_from_data
 
 section .text
 
@@ -74,6 +78,26 @@ simplest:
     inc rax
     ret
 
+data_sect_ref_to_code:
+
+    lea rax, [rel .ref_from_data]
+    cmp [rel code_ref_in_data], rax
+    jz .ok
+    ud2
+.ok:
+    ret
+
+.ref_from_data:
+    ud2
+
+simple_lea_and_call:
+    
+    lea rax, [rel .continue]
+    jmp rax
+    ud2
+.continue:
+    ret
+
 WinMain:
 
     call jmp_dd_test
@@ -85,9 +109,16 @@ WinMain:
 .simple_loop_ok:
 
     call simple_cond_in_code
+
     call simple_cond
+
     call simple_lea
+
     call simplest
+
+    call data_sect_ref_to_code
+
+    call simple_lea_and_call
 
     xor eax, eax
     ret
