@@ -5,31 +5,31 @@
 
 void translator::make_dword_mov_cov_hit()
 {
+#ifdef _WIN64
+    size_t inst_size = 10;
+#else
     size_t inst_size = 6;
+#endif
+
     ASSERT(m_inst_offset + inst_size < m_inst_code->size());
     ASSERT(m_cov_offset + 4 < m_cov_buf->size());
 
     size_t bits = 32;
     auto op = dasm::maker();
-#ifdef _WIN64
+
     size_t disp = (m_cov_buf->addr_remote() + m_cov_offset)
         - (m_inst_code->addr_remote() + m_inst_offset + inst_size);
+
     xed_inst2(&op.enc_inst, op.dstate,
             XED_ICLASS_MOV, 0,
-            xed_mem_bd(XED_REG_RIP, xed_disp(disp, bits), bits),
-            xed_imm0(1, bits)
+            xed_mem_bd(XED_REG_RIP, xed_disp(disp, 32), 32),
+            xed_imm0(1, 32)
             );
-#else 
-    size_t disp = m_cov_buf->addr_remote() + m_cov_offset;
-    xed_inst2(&op.enc_inst, op.dstate,
-            XED_ICLASS_MOV, 0,
-            xed_mem_bd(XED_REG_INVALID, xed_disp(disp, bits), bits),
-            xed_imm0(1, bits)
-            );
-#endif
+
     auto new_inst_size = op.make(
             (uint8_t*)(m_inst_code->addr_loc() + m_inst_offset), 
             inst_size);
+
     ASSERT(new_inst_size == inst_size);
     m_cov_offset += 4;
     m_inst_offset += new_inst_size;
@@ -136,7 +136,7 @@ size_t translator::instrument(size_t addr)
                 SAY_DEBUG("Remote bb got instrumented %p -> %p\n", 
                         rip, remote_inst);
             //make_dword_inc_cov_hit();
-            //make_dword_mov_cov_hit();
+            make_dword_mov_cov_hit();
             remote_inst = m_inst_code->addr_remote() + m_inst_offset;
         }
 

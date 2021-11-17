@@ -121,6 +121,7 @@ bool dasm::opcode::fix_mem_disp(size_t new_addr){
 dasm::maker::maker() 
 {
 
+    xed_state_zero(&dstate);
 #ifdef _WIN64
     dstate.mmode = XED_MACHINE_MODE_LONG_64;
     dstate.stack_addr_width = XED_ADDRESS_WIDTH_64b;
