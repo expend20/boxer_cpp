@@ -58,6 +58,7 @@ class instrumenter: public idebug_handler {
         void instrument_module(size_t addr, const char* name);
         void instrument_module_int3(size_t addr, const char* name);
         bool should_translate(size_t addr);
+        void translate_all_bbs();
         void patch_references_to_section(pehelper::pe* module, 
                 pehelper::section* target_section, 
                 size_t shadow_sect_remote_start);
