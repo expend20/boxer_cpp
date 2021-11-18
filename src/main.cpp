@@ -17,7 +17,7 @@ int main(int argc, const char** argv)
             GetBinaryOption("--help", argc, argv, false)) {
         SAY_INFO_RAW("Usage:\n\t%s --cov <mod> --cmd <cmd line>\n", argv[0]);
         SAY_INFO_RAW("Instrumentation options:\n\t"
-                "--inst_int3 --fix_dd_refs"
+                "--inst_bbs_file --inst_int3 --fix_dd_refs"
                 "\n");
         SAY_INFO_RAW("Debug options:\n\t"
                 "--disasm --show_flow --inst_debug --trans_debug --single_step"
@@ -37,11 +37,18 @@ int main(int argc, const char** argv)
         ins.add_module(mod);
     }
 
+    auto is_inst_bbs_path = GetOption("--inst_bbs_file", argc, argv);
+    if (is_inst_bbs_path) {
+        SAY_INFO("inst_bbs_file = %s\n", is_inst_bbs_path);
+        ins.set_bbs_inst();
+        ins.set_bbs_path(is_inst_bbs_path);
+    }
     auto is_inst_int3 = GetBinaryOption("--inst_int3", argc, argv, false);
     if (is_inst_int3) {
         SAY_INFO("inst_int3 = true\n");
         ins.set_int3_inst();
     }
+
     auto is_fix_dd_refs = GetBinaryOption("--fix_dd_refs", argc, argv, true);
     if (is_fix_dd_refs) {
         SAY_INFO("fix_dd_refs = true\n");

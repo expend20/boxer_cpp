@@ -142,7 +142,9 @@ size_t translator::instrument(size_t addr)
 
         // disasm & cache
         auto offset = rip - m_text_sect_remote_addr;
-        auto local_addr = m_text_sect->addr_loc() + offset;
+        auto local_addr = m_opts.shadow_code ? 
+            m_opts.shadow_code->addr_loc() + offset:
+            m_text_sect->addr_loc() + offset;
         if (m_opts.debug)
             SAY_DEBUG("Disasm (%x) local: %p remote: %p text sect remote: %p\n", 
                     offset, local_addr, rip, m_text_sect_remote_addr);

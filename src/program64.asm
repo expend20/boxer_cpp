@@ -13,11 +13,11 @@ jmp_dd:
     align 8
 code_ref_in_data:
     dq data_sect_ref_to_code.ref_from_data
+some_var_in_text:
+    dd 0x12345678
 
 section .text
 
-some_var_in_text:
-    dd 0x12345678
 
 simple_call:
 

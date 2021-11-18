@@ -20,6 +20,8 @@ struct instrumenter_stats {
 
 struct instrumenter_options {
     bool is_int3_inst = false;
+    bool is_bbs_inst = false;
+    const char* bbs_path = 0;
     bool fix_dd_refs = false;
     bool debug = false;
     bool show_flow = false;
@@ -37,8 +39,10 @@ class instrumenter: public idebug_handler {
         void add_module(const char* module);
         void print_stats();
 
-        // opts setter
+        // opts setters
         void set_int3_inst() { m_opts.is_int3_inst = true; };
+        void set_bbs_inst() { m_opts.is_bbs_inst = true; };
+        void set_bbs_path(const char* p) { m_opts.bbs_path = p; };
         void set_fix_dd_refs() { m_opts.fix_dd_refs = true; };
         void set_debug() { m_opts.debug = true; };
         void set_show_flow() { m_opts.show_flow = true; };

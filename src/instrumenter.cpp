@@ -34,7 +34,11 @@ bool instrumenter::should_translate(size_t addr)
             if (!inst_addr) { 
                 if (m_opts.debug) 
                     SAY_DEBUG("Address not found, instrumenting...\n");
-                inst_addr = trans->instrument(addr);
+                if (m_opts.is_bbs_inst) {
+                    inst_addr = trans->instrument(addr);
+                } else {
+                    inst_addr = trans->instrument(addr);
+                }
                 ASSERT(inst_addr);
                 m_stats.translator_called++;
             }
@@ -61,7 +65,7 @@ bool instrumenter::should_translate(size_t addr)
                         addr,  inst_addr,
                         ctx.Rax, ctx.Rax, ctx.Rcx, ctx.Rdx, ctx.R8, ctx.R9,
                         ctx.Rsp, ctx.Rbp, ctx.Rsi, ctx.Rdi);
-                if (m_opts.is_int3_inst) {
+                if (m_opts.is_int3_inst || m_opts.is_bbs_inst) {
                     ASSERT(addr == ctx.Rip - 1);
                 }
                 else {
@@ -69,7 +73,7 @@ bool instrumenter::should_translate(size_t addr)
                 }
             }
 
-            if (m_opts.is_int3_inst) {
+            if (m_opts.is_int3_inst || m_opts.is_bbs_inst) {
                 // TODO: place jump if possible
                 tools::update_thread_rip(hThread, inst_addr);
             }
@@ -117,138 +121,115 @@ void instrumenter::patch_references_to_section(pehelper::pe* module,
     }
 }
 
-// TODO: merge into instrument_module()
-void instrumenter::instrument_module_int3(size_t addr, const char* name) 
-{
-    if (m_opts.debug) 
-        SAY_INFO("Instrumenting (int3) %p %s...\n", addr, name);
-
-    auto hproc = m_debugger->get_proc_info()->hProcess;
-    auto obj = pehelper::pe(hproc, addr);
-    m_modules.push_back(obj);
-    auto pe = &m_modules[m_modules.size() - 1];
-
-    auto opt_head = pe->get_nt_headers()->OptionalHeader;
-    size_t img_size = opt_head.SizeOfImage;
-    size_t img_end = pe->get_remote_addr() + img_size;
-
-    auto code_section = pe->get_section(".text");
-    if (!code_section) code_section = pe->get_section(".code");
-    ASSERT(code_section);
-
-    //code_section->data.make_non_executable();
-    m_sections_patched.push_back(code_section);
-
-    // create shadow memory
-    size_t shadow_code_size = code_section->data.size();
-    auto shadow_code_ptr = tools::alloc_after_pe_image(
-            hproc,
-            img_end,
-            shadow_code_size,
-            PAGE_READONLY);
-    ASSERT(shadow_code_ptr);
-	m_base_to_shadow[addr] = mem_tool(hproc, shadow_code_ptr, shadow_code_size);
-    auto shadow_code_data = &m_base_to_shadow[addr];
-
-    // copy text to shadow
-    memcpy((void*)shadow_code_data->addr_loc(),
-            (void*)code_section->data.addr_loc(), 
-            shadow_code_data->size());
-    if (m_opts.debug) 
-        SAY_INFO("copied loc %p %p %x\n",
-                (void*)shadow_code_data->addr_loc(),
-                (void*)code_section->data.addr_loc(), 
-                shadow_code_data->size());
-    shadow_code_data->commit();
-
-    // fill text with int3s
-    memset((void*)code_section->data.addr_loc(), 
-            0xcc,
-            code_section->data.size());
-    code_section->data.commit();
-    
-    // fix references to code from other sections
-    //patch_references_to_section(pe, 
-    //        code_section, shadow_code_data->addr_remote());
-
-    // get instrumentation buffer
-    size_t code_inst_size = img_size * 4;
-    auto code_inst = tools::alloc_after_pe_image(
-            hproc,
-            shadow_code_ptr + shadow_code_size,
-            code_inst_size,
-            PAGE_EXECUTE_READ);
-    ASSERT(code_inst);
-    auto mem_inst = mem_tool(hproc, code_inst, code_inst_size);
-    mem_inst.read();
-    m_base_to_inst[addr] = mem_inst;
-
-    // get coverage buffer
-    size_t cov_buf_size = img_size;
-    auto cov_buf = tools::alloc_after_pe_image(hproc, 
-            code_inst + code_inst_size,
-            cov_buf_size,
-            PAGE_READWRITE);
-    ASSERT(cov_buf);
-    auto mem_cov = mem_tool(hproc, cov_buf, cov_buf_size);
-    m_base_to_cov[addr] = mem_cov;
-
-    // get metadata buffer
-    size_t meta_buf_size = img_size;
-    auto meta_buf = tools::alloc_after_pe_image(hproc,
-            cov_buf + cov_buf_size,
-            meta_buf_size,
-            PAGE_READWRITE);
-    ASSERT(meta_buf);
-    m_base_to_cov[addr] = mem_cov;
-
-    // check 2gb limit, for relative data access
-    ASSERT((meta_buf + meta_buf_size) - addr < 0x7fffffff);
-
-    auto trans = translator(&m_base_to_inst[addr],
-            &m_base_to_cov[addr],
-            &m_base_to_metadata[addr],
-            shadow_code_data,
-            code_section->data.addr_remote());
-
-    if (m_opts.translator_debug)
-        trans.set_debug();
-
-    if (m_opts.translator_disasm)
-        trans.set_disasm();
-
-    if (m_opts.fix_dd_refs && !m_opts.translator_single_step)
-        trans.set_fix_dd_refs();
-
-    if (m_opts.translator_single_step)
-        trans.set_single_step();
-
-    m_base_to_translator[addr] = trans;
-}
-
 void instrumenter::instrument_module(size_t addr, const char* name) 
 {
-    if (m_opts.debug) 
-        SAY_INFO("Instrumenting %p %s...\n", addr, name);
+    auto inst_type = "dep";
+    if (m_opts.is_bbs_inst) {
+        inst_type = "bbs";
+    } else {
+        inst_type = "int3";
+    }
 
-    // patch the code section
+    if (m_opts.debug) 
+        SAY_INFO("Instrumenting %s %p %s...\n", inst_type, addr, name);
+
     auto hproc = m_debugger->get_proc_info()->hProcess;
     auto obj = pehelper::pe(hproc, addr);
     m_modules.push_back(obj);
     auto pe = &m_modules[m_modules.size() - 1];
-    auto code_section = pe->get_section(".text");
-    if (!code_section) code_section = pe->get_section(".code");
-    ASSERT(code_section);
-    code_section->data.make_non_executable();
-    m_sections_patched.push_back(code_section);
-    if (m_opts.debug) 
-        SAY_DEBUG("code section local: %p %x\n", code_section->data.addr_loc(),
-                code_section->data.size());
 
-    // get instrumentation buffer
     auto opt_head = pe->get_nt_headers()->OptionalHeader;
     size_t img_size = opt_head.SizeOfImage;
     size_t img_end = pe->get_remote_addr() + img_size;
+
+    auto code_section = pe->get_section(".text");
+    if (!code_section) code_section = pe->get_section(".code");
+    ASSERT(code_section);
+
+    mem_tool* shadow_code_data = 0;
+
+    m_sections_patched.push_back(code_section);
+    if (m_opts.is_bbs_inst) {
+        // create shadow memory
+        size_t shadow_code_size = code_section->data.size();
+        auto shadow_code_ptr = tools::alloc_after_pe_image(
+                hproc,
+                img_end,
+                shadow_code_size,
+                PAGE_READONLY);
+        ASSERT(shadow_code_ptr);
+        m_base_to_shadow[addr] = mem_tool(hproc, shadow_code_ptr, 
+                shadow_code_size);
+        // NOTE: overshadowing variable
+        shadow_code_data = &m_base_to_shadow[addr];
+
+        // copy text to shadow
+        memcpy((void*)shadow_code_data->addr_loc(),
+                (void*)code_section->data.addr_loc(), 
+                shadow_code_data->size());
+        if (m_opts.debug) 
+            SAY_INFO("copied loc %p %p %x\n",
+                    (void*)shadow_code_data->addr_loc(),
+                    (void*)code_section->data.addr_loc(), 
+                    shadow_code_data->size());
+        shadow_code_data->commit();
+
+        // fill text with int3s based on bbs file
+        auto offsets = helper::files2Vector(m_opts.bbs_path);
+        uint32_t* ptr = (uint32_t*)&offsets[0][0];
+        for (size_t i = 0; i < offsets[0].size() / 4; i++) {
+            uint32_t sect_offset = ptr[i] - 
+                code_section->sect_head.VirtualAddress;
+            *(uint8_t*)(code_section->data.addr_loc() + sect_offset) = 0xcc;
+        }
+        SAY_INFO("%d offsets patched to int3\n", offsets[0].size());
+
+        code_section->data.commit();
+        img_end = shadow_code_ptr + shadow_code_size;
+    }
+    else if (m_opts.is_int3_inst) {
+        // create shadow memory
+        size_t shadow_code_size = code_section->data.size();
+        auto shadow_code_ptr = tools::alloc_after_pe_image(
+                hproc,
+                img_end,
+                shadow_code_size,
+                PAGE_READONLY);
+        ASSERT(shadow_code_ptr);
+        m_base_to_shadow[addr] = mem_tool(hproc, shadow_code_ptr, 
+                shadow_code_size);
+        shadow_code_data = &m_base_to_shadow[addr];
+
+        // copy text to shadow
+        memcpy((void*)shadow_code_data->addr_loc(),
+                (void*)code_section->data.addr_loc(), 
+                shadow_code_data->size());
+        if (m_opts.debug) 
+            SAY_INFO("copied loc %p %p %x\n",
+                    (void*)shadow_code_data->addr_loc(),
+                    (void*)code_section->data.addr_loc(), 
+                    shadow_code_data->size());
+        shadow_code_data->commit();
+
+        // fill text with int3s
+        memset((void*)code_section->data.addr_loc(), 
+                0xcc,
+                code_section->data.size());
+        code_section->data.commit();
+
+        // fix references to code from other sections
+        //patch_references_to_section(pe, 
+        //        code_section, shadow_code_data->addr_remote());
+        
+        img_end = shadow_code_ptr + shadow_code_size;
+    }
+    else { 
+        // dep mode
+        code_section->data.make_non_executable();
+
+    }
+
+    // get instrumentation buffer
     size_t code_inst_size = img_size * 4;
     auto code_inst = tools::alloc_after_pe_image(
             hproc,
@@ -287,6 +268,7 @@ void instrumenter::instrument_module(size_t addr, const char* name)
             &m_base_to_metadata[addr],
             &code_section->data,
             code_section->data.addr_remote());
+    if (shadow_code_data) trans.set_shadow_code(shadow_code_data);
 
     if (m_opts.translator_debug)
         trans.set_debug();
@@ -302,6 +284,161 @@ void instrumenter::instrument_module(size_t addr, const char* name)
 
     m_base_to_translator[addr] = trans;
 }
+
+// TODO: merge into instrument_module()
+//void instrumenter::instrument_module_int3(size_t addr, const char* name) 
+//{
+//    if (m_opts.debug) 
+//        SAY_INFO("Instrumenting (int3) %p %s...\n", addr, name);
+//
+//    auto hproc = m_debugger->get_proc_info()->hProcess;
+//    auto obj = pehelper::pe(hproc, addr);
+//    m_modules.push_back(obj);
+//    auto pe = &m_modules[m_modules.size() - 1];
+//
+//    auto opt_head = pe->get_nt_headers()->OptionalHeader;
+//    size_t img_size = opt_head.SizeOfImage;
+//    size_t img_end = pe->get_remote_addr() + img_size;
+//
+//    auto code_section = pe->get_section(".text");
+//    if (!code_section) code_section = pe->get_section(".code");
+//    ASSERT(code_section);
+//
+//    //code_section->data.make_non_executable();
+//    m_sections_patched.push_back(code_section);
+//
+//
+//    // get instrumentation buffer
+//    size_t code_inst_size = img_size * 4;
+//    auto code_inst = tools::alloc_after_pe_image(
+//            hproc,
+//            shadow_code_ptr + shadow_code_size,
+//            code_inst_size,
+//            PAGE_EXECUTE_READ);
+//    ASSERT(code_inst);
+//    auto mem_inst = mem_tool(hproc, code_inst, code_inst_size);
+//    mem_inst.read();
+//    m_base_to_inst[addr] = mem_inst;
+//
+//    // get coverage buffer
+//    size_t cov_buf_size = img_size;
+//    auto cov_buf = tools::alloc_after_pe_image(hproc, 
+//            code_inst + code_inst_size,
+//            cov_buf_size,
+//            PAGE_READWRITE);
+//    ASSERT(cov_buf);
+//    auto mem_cov = mem_tool(hproc, cov_buf, cov_buf_size);
+//    m_base_to_cov[addr] = mem_cov;
+//
+//    // get metadata buffer
+//    size_t meta_buf_size = img_size;
+//    auto meta_buf = tools::alloc_after_pe_image(hproc,
+//            cov_buf + cov_buf_size,
+//            meta_buf_size,
+//            PAGE_READWRITE);
+//    ASSERT(meta_buf);
+//    m_base_to_cov[addr] = mem_cov;
+//
+//    // check 2gb limit, for relative data access
+//    ASSERT((meta_buf + meta_buf_size) - addr < 0x7fffffff);
+//
+//    auto trans = translator(&m_base_to_inst[addr],
+//            &m_base_to_cov[addr],
+//            &m_base_to_metadata[addr],
+//            shadow_code_data,
+//            code_section->data.addr_remote());
+//
+//    if (m_opts.translator_debug)
+//        trans.set_debug();
+//
+//    if (m_opts.translator_disasm)
+//        trans.set_disasm();
+//
+//    if (m_opts.fix_dd_refs && !m_opts.translator_single_step)
+//        trans.set_fix_dd_refs();
+//
+//    if (m_opts.translator_single_step)
+//        trans.set_single_step();
+//
+//    m_base_to_translator[addr] = trans;
+//}
+
+//void instrumenter::instrument_module_dep(size_t addr, const char* name) 
+//{
+//    if (m_opts.debug) 
+//        SAY_INFO("Instrumenting %p %s...\n", addr, name);
+//
+//    // patch the code section
+//    auto hproc = m_debugger->get_proc_info()->hProcess;
+//    auto obj = pehelper::pe(hproc, addr);
+//    m_modules.push_back(obj);
+//    auto pe = &m_modules[m_modules.size() - 1];
+//    auto code_section = pe->get_section(".text");
+//    if (!code_section) code_section = pe->get_section(".code");
+//    ASSERT(code_section);
+//    code_section->data.make_non_executable();
+//    m_sections_patched.push_back(code_section);
+//    if (m_opts.debug) 
+//        SAY_DEBUG("code section local: %p %x\n", code_section->data.addr_loc(),
+//                code_section->data.size());
+//
+//    // get instrumentation buffer
+//    auto opt_head = pe->get_nt_headers()->OptionalHeader;
+//    size_t img_size = opt_head.SizeOfImage;
+//    size_t img_end = pe->get_remote_addr() + img_size;
+//    size_t code_inst_size = img_size * 4;
+//    auto code_inst = tools::alloc_after_pe_image(
+//            hproc,
+//            img_end,
+//            code_inst_size,
+//            PAGE_EXECUTE_READ);
+//    ASSERT(code_inst);
+//    auto mem_inst = mem_tool(hproc, code_inst, code_inst_size);
+//    mem_inst.read();
+//    m_base_to_inst[addr] = mem_inst;
+//
+//    // get coverage buffer
+//    size_t cov_buf_size = img_size;
+//    auto cov_buf = tools::alloc_after_pe_image(hproc, 
+//            code_inst + code_inst_size,
+//            cov_buf_size,
+//            PAGE_READWRITE);
+//    ASSERT(cov_buf);
+//    auto mem_cov = mem_tool(hproc, cov_buf, cov_buf_size);
+//    m_base_to_cov[addr] = mem_cov;
+//
+//    // get metadata buffer
+//    size_t meta_buf_size = img_size;
+//    auto meta_buf = tools::alloc_after_pe_image(hproc,
+//            cov_buf + cov_buf_size,
+//            meta_buf_size,
+//            PAGE_READWRITE);
+//    ASSERT(meta_buf);
+//    m_base_to_cov[addr] = mem_cov;
+//
+//    // check 2gb limit, for relative data access
+//    ASSERT((meta_buf + meta_buf_size) - addr < 0x7fffffff);
+//
+//    auto trans = translator(&m_base_to_inst[addr],
+//            &m_base_to_cov[addr],
+//            &m_base_to_metadata[addr],
+//            &code_section->data,
+//            code_section->data.addr_remote());
+//
+//    if (m_opts.translator_debug)
+//        trans.set_debug();
+//
+//    if (m_opts.translator_disasm)
+//        trans.set_disasm();
+//
+//    if (m_opts.fix_dd_refs && !m_opts.translator_single_step)
+//        trans.set_fix_dd_refs();
+//
+//    if (m_opts.translator_single_step)
+//        trans.set_single_step();
+//
+//    m_base_to_translator[addr] = trans;
+//}
 
 bool instrumenter::should_instrument_module(const char* name)
 {
@@ -326,12 +463,7 @@ void instrumenter::on_first_breakpoint()
         SAY_INFO("on_first_breakpoint() reached\n");
     for (auto &[addr, mod_name]: m_remote_modules_list) {
         if (should_instrument_module(mod_name.c_str()))
-            if (m_opts.is_int3_inst) {
-                instrument_module_int3(addr, mod_name.c_str());
-            }
-            else {
-                instrument_module(addr, mod_name.c_str());
-            }
+            instrument_module(addr, mod_name.c_str());
     }
 
 }
@@ -394,7 +526,7 @@ DWORD instrumenter::handle_exception(EXCEPTION_DEBUG_INFO* dbg_info)
                 // if it's first breakpoint, it's debugger's one
                 on_first_breakpoint();
             } else {
-                if (m_opts.is_int3_inst &&
+                if (//(m_opts.is_int3_inst || m_opts.is_bbs_inst) &&
                         should_translate((size_t)rec->ExceptionAddress)) {
                     continue_status = DBG_CONTINUE;
                 }

@@ -18,6 +18,7 @@ struct translator_opts {
     bool debug = false;
     bool disasm = false;
     bool single_step = false;
+    mem_tool* shadow_code = 0;
 };
 
 class translator {
@@ -43,6 +44,7 @@ class translator {
         void set_debug() { m_opts.debug = true; };
         void set_disasm() { m_opts.disasm = true; };
         void set_single_step() { m_opts.single_step = true; };
+        void set_shadow_code(mem_tool* p) { m_opts.shadow_code = p; };
 
     private:
         mem_tool*         m_inst_code = NULL;
