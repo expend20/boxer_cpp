@@ -34,17 +34,20 @@ class translator {
                 size_t text_sect_remote_addr);
 
         size_t remote_orig_to_inst_bb(size_t addr);
-        size_t instrument(size_t addr);
+        size_t instrument(size_t addr, uint32_t* instrumented_size, 
+                uint32_t* original_size);
 
         void make_dword_inc_cov_hit();
         void make_dword_mov_cov_hit();
-        void make_jump(size_t target_addr);
+        void make_jump_to_orig_or_inst(size_t target_addr);
+        uint32_t make_jump_from_orig_to_inst(size_t jump_from, size_t jump_to);
 
         void set_fix_dd_refs() { m_opts.fix_dd_refs = true; };
         void set_debug() { m_opts.debug = true; };
         void set_disasm() { m_opts.disasm = true; };
         void set_single_step() { m_opts.single_step = true; };
         void set_shadow_code(mem_tool* p) { m_opts.shadow_code = p; };
+        void set_bbs(std::set<size_t>* p) { m_bbs = p; };
 
     private:
         mem_tool*         m_inst_code = NULL;
@@ -60,6 +63,7 @@ class translator {
         // Remote origin RIP to remote instrumented code
         std::map<size_t, size_t> m_remote_orig_to_inst_bb;
         std::set<size_t> m_remote_dd_refs;
+        std::set<size_t>* m_bbs;
 
         void fix_dd_refs();
 

@@ -67,7 +67,7 @@ void translator::make_dword_inc_cov_hit()
     m_inst_offset += new_inst_size;
 }
 
-void translator::make_jump(size_t target_addr)
+void translator::make_jump_to_orig_or_inst(size_t target_addr)
 {
     auto already_inst = remote_orig_to_inst_bb(target_addr);
     if (already_inst) target_addr = already_inst;
@@ -108,12 +108,34 @@ void translator::fix_dd_refs() {
     }
 }
 
+uint32_t translator::make_jump_from_orig_to_inst(
+        size_t jump_from, size_t jump_to)
+{
+    size_t text_offset = jump_from - m_text_sect->addr_remote();
+
+    size_t inst_size = 5;
+
+    size_t bits = 32;
+    size_t disp = jump_to - (jump_from + 5);
+    auto op = dasm::maker();
+    xed_inst1(&op.enc_inst, op.dstate,
+            XED_ICLASS_JMP, 32,
+            xed_relbr(disp, 32));
+    auto new_inst_size = op.make(
+            (uint8_t*)(m_text_sect->addr_loc() + text_offset), 
+            inst_size);
+    ASSERT(new_inst_size == inst_size);
+    return new_inst_size;
+}
+
 // Here we do quite simple instrumentation. We instrument only one basic block
 // from the perspective of current pointer, meaning if then discovered jump to
 // the middle of existing basic block, we will create new one with partial code
 // duplication. We also do not follow any references in advance. 
 // This strategy leads to the instrumentation of only code wich is hit.
-size_t translator::instrument(size_t addr)
+size_t translator::instrument(size_t addr, 
+        uint32_t* instrumented_size,
+        uint32_t* original_size)
 {
     static auto one_time_init = false;
     if (!one_time_init) {
@@ -126,6 +148,7 @@ size_t translator::instrument(size_t addr)
     size_t inst_start_offset = m_inst_offset;
     size_t inst_start_ptr = m_inst_code->addr_remote() + m_inst_offset;
     size_t inst_count = 0;
+    size_t orig_size = 0;
     while(1) {
         auto remote_inst = m_inst_code->addr_remote() + m_inst_offset;
         // should instrument instruction
@@ -166,6 +189,7 @@ size_t translator::instrument(size_t addr)
                     xed_iclass_enum_t2str(op->iclass));
         }
 
+        orig_size += op->size_orig;
         auto inst_sz = op->rebuild_to_new_addr(
                 (uint8_t*)m_inst_code->addr_loc() + m_inst_offset,
                 m_inst_code->addr_loc_end() - local_addr,
@@ -194,12 +218,14 @@ size_t translator::instrument(size_t addr)
 
         if (op->is_iclass_jxx()) should_stop = true;
         if (m_opts.single_step) should_stop = true;
+        if (m_bbs->find(rip + op->size_orig) != m_bbs->end()) 
+            should_stop = true;
         //|| op->category == XED_CATEGORY_CALL
 
         if (should_stop) {
             // place new jump to keep code linked
             auto tgt_addr = op->size_orig + op->addr;
-            make_jump(tgt_addr);
+            make_jump_to_orig_or_inst(tgt_addr);
             m_remote_dd_refs.insert(
                     m_inst_code->addr_remote() + m_inst_offset - 4);
             break;
@@ -210,12 +236,10 @@ size_t translator::instrument(size_t addr)
     }
     if (m_opts.fix_dd_refs)
         fix_dd_refs();
-    m_inst_code->commit();
 
     auto inst_size = m_inst_offset - inst_start_offset;
-    auto r = FlushInstructionCache(m_inst_code->get_proc(), 
-            (void*)inst_start_ptr, inst_size
-            );
+    if (instrumented_size) *instrumented_size = inst_size;
+    if (original_size) *original_size = orig_size;
 
     return m_remote_orig_to_inst_bb[addr];
 }

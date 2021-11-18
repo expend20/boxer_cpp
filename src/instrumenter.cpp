@@ -32,17 +32,45 @@ bool instrumenter::should_translate(size_t addr)
 
             size_t inst_addr = trans->remote_orig_to_inst_bb(addr);
             if (!inst_addr) { 
+                m_stats.translator_called++;
+
                 if (m_opts.debug) 
                     SAY_DEBUG("Address not found, instrumenting...\n");
-                if (m_opts.is_bbs_inst) {
-                    inst_addr = trans->instrument(addr);
-                } else {
-                    inst_addr = trans->instrument(addr);
-                }
+                uint32_t inst_size = 0;
+                uint32_t orig_size = 0;
+                inst_addr = trans->instrument(addr, &inst_size, &orig_size);
                 ASSERT(inst_addr);
-                m_stats.translator_called++;
-            }
-            else {
+
+                if (m_opts.is_bbs_inst) {
+
+                    if (orig_size < 5) {
+                        SAY_ERROR("BB at %p has size %d (inst %d), we need at "
+                                "least 5 to make jump\n", 
+                                addr, inst_size, orig_size);
+                    }
+                    else {
+                        // Place jump
+                        auto jump_size = trans->make_jump_from_orig_to_inst(
+                                addr, inst_addr);
+                        // Commit on orig code
+                        sect->data.commit();
+                        auto r = FlushInstructionCache(
+                                m_debugger->get_proc_info()->hProcess,
+                                (void*)addr, jump_size
+                                );
+                        ASSERT(r);
+                    }
+
+                }
+
+                // Call commit on inst code
+                m_base_to_inst[mod_base].commit();
+
+                auto r = FlushInstructionCache(
+                        m_debugger->get_proc_info()->hProcess,
+                        (void*)inst_addr, inst_size
+                        );
+                ASSERT(r);
             }
 
             // TODO: review all code with pid/tid references in mind
@@ -73,11 +101,7 @@ bool instrumenter::should_translate(size_t addr)
                 }
             }
 
-            if (m_opts.is_int3_inst || m_opts.is_bbs_inst) {
-                // TODO: place jump if possible
-                tools::update_thread_rip(hThread, inst_addr);
-            }
-            else {
+            if (m_opts.is_bbs_inst) {
                 tools::update_thread_rip(hThread, inst_addr);
             }
 
@@ -160,7 +184,6 @@ void instrumenter::instrument_module(size_t addr, const char* name)
         ASSERT(shadow_code_ptr);
         m_base_to_shadow[addr] = mem_tool(hproc, shadow_code_ptr, 
                 shadow_code_size);
-        // NOTE: overshadowing variable
         shadow_code_data = &m_base_to_shadow[addr];
 
         // copy text to shadow
@@ -178,6 +201,7 @@ void instrumenter::instrument_module(size_t addr, const char* name)
         auto offsets = helper::files2Vector(m_opts.bbs_path);
         uint32_t* ptr = (uint32_t*)&offsets[0][0];
         for (size_t i = 0; i < offsets[0].size() / 4; i++) {
+            m_bbs.insert(ptr[i] + addr);
             uint32_t sect_offset = ptr[i] - 
                 code_section->sect_head.VirtualAddress;
             *(uint8_t*)(code_section->data.addr_loc() + sect_offset) = 0xcc;
@@ -269,6 +293,7 @@ void instrumenter::instrument_module(size_t addr, const char* name)
             &code_section->data,
             code_section->data.addr_remote());
     if (shadow_code_data) trans.set_shadow_code(shadow_code_data);
+    if (m_bbs.size()) trans.set_bbs(&m_bbs);
 
     if (m_opts.translator_debug)
         trans.set_debug();

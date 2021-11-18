@@ -82,6 +82,8 @@ class instrumenter: public idebug_handler {
 
         std::map<DWORD, HANDLE> m_tid_to_handle;
 
+        std::set<size_t> m_bbs;
+
         instrumenter_options m_opts;
 
 };
