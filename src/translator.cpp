@@ -190,6 +190,7 @@ size_t translator::instrument(size_t addr,
         }
 
         orig_size += op->size_orig;
+
         auto inst_sz = op->rebuild_to_new_addr(
                 (uint8_t*)m_inst_code->addr_loc() + m_inst_offset,
                 m_inst_code->addr_loc_end() - local_addr,
@@ -239,7 +240,23 @@ size_t translator::instrument(size_t addr,
 
     auto inst_size = m_inst_offset - inst_start_offset;
     if (instrumented_size) *instrumented_size = inst_size;
-    if (original_size) *original_size = orig_size;
+    if (original_size) {
+        if (orig_size < 5) {
+            for (size_t i = 0; i < 4; i++) {
+                // if we have 0xcc after a basicblock end, we can safely use it
+                auto offset = orig_size + addr - m_text_sect_remote_addr;
+                auto base = m_opts.shadow_code ? m_opts.shadow_code->addr_loc()
+                            : m_text_sect->addr_loc();
+                if (0xcc == *(uint8_t*)(base + offset + i)) {
+                    orig_size++;
+                }
+                else {
+                    break;
+                }
+            }
+        }
+        *original_size = orig_size;
+    }
 
     return m_remote_orig_to_inst_bb[addr];
 }
