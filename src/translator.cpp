@@ -108,6 +108,135 @@ void translator::fix_dd_refs() {
     }
 }
 
+uint32_t translator::translate_call_to_jump(
+        dasm::opcode* op, uint8_t* buf, size_t buf_size, size_t target_addr)
+{
+    // let's translate it to `push <orig_addr> & call`
+    
+    // make push
+    uint32_t inst_size = 0;
+    //SAY_DEBUG("Making push... %p %d\n", buf, buf_size);
+    // There is no `push <imm64>` or `mov [rsp], <imm64>` instruction, we need
+    // to use register:
+    //
+    // push rax
+    // push rax
+    // mov rax, imm64
+    // mov [rsp + 8], rax
+    // pop rax
+    // jmp <call ref>
+
+    // push rax
+    auto new_op = dasm::maker();
+    xed_inst1(&new_op.enc_inst, new_op.dstate,
+            XED_ICLASS_PUSH, 64,
+            xed_reg(XED_REG_RAX));
+    auto new_size = new_op.make(buf, buf_size);
+    ASSERT(new_size == 1);
+    inst_size += new_size;
+
+    // push rax
+    new_op = dasm::maker();
+    xed_inst1(&new_op.enc_inst, new_op.dstate,
+            XED_ICLASS_PUSH, 64,
+            xed_reg(XED_REG_RAX));
+    new_size = new_op.make(buf + inst_size, buf_size + inst_size);
+    ASSERT(new_size == 1);
+    inst_size += new_size;
+
+    // mov rax, imm64
+    new_op = dasm::maker();
+    xed_inst2(&new_op.enc_inst, new_op.dstate,
+            XED_ICLASS_MOV, 64,
+            xed_reg(XED_REG_RAX),
+            xed_imm0(target_addr, 64));
+    new_size = new_op.make(buf + inst_size, buf_size + inst_size);
+    ASSERT(new_size == 10);
+    inst_size += new_size;
+
+    // mov [rsp+8], rax
+    new_op = dasm::maker();
+    xed_inst2(&new_op.enc_inst, new_op.dstate,
+            XED_ICLASS_MOV, 64,
+            xed_mem_bd(XED_REG_RSP, xed_disp(8, 8), 64),
+            xed_reg(XED_REG_RAX)
+            );
+    new_size = new_op.make(buf + inst_size, buf_size + inst_size);
+    ASSERT(new_size == 5);
+    inst_size += new_size;
+
+    // pop rax
+    new_op = dasm::maker();
+    xed_inst1(&new_op.enc_inst, new_op.dstate,
+            XED_ICLASS_POP, 64,
+            xed_reg(XED_REG_RAX));
+    new_size = new_op.make(buf + inst_size, buf_size + inst_size);
+    ASSERT(new_size == 1);
+    inst_size += new_size;
+
+    ASSERT(inst_size == 18);
+
+    // making jump, get target operand
+    auto target_op_name = xed_operand_name(op->first_op);
+    if (target_op_name == XED_OPERAND_RELBR) {
+        //SAY_DEBUG("XED_OPERAND_RELBR, disp = %x\n",
+        //        op->branch_disp);
+        uint32_t jmp_size = 5;
+        size_t target_branch = target_addr + op->branch_disp;
+        size_t inst_end = m_inst_code->addr_remote() + m_inst_offset + 
+                inst_size + jmp_size;
+        //SAY_DEBUG("target + disp %p, inst end %p\n", target_branch,
+        //        inst_end);
+        ASSERT(op->size_orig == 5);
+        new_op = dasm::maker();
+        xed_inst1(&new_op.enc_inst, new_op.dstate,
+                XED_ICLASS_JMP, 32,
+                xed_relbr(target_branch - inst_end,  32)
+                );
+        new_size = new_op.make(buf + inst_size, buf_size + inst_size);
+        ASSERT(new_size == 5);
+        inst_size += new_size;
+    } 
+    else if (target_op_name == XED_OPERAND_MEM0) {
+        //SAY_DEBUG("XED_OPERAND_MEM0, reg = %s, disp = %x(%d)\n",
+        //        xed_reg_enum_t2str(op->reg_base),
+        //        op->mem_disp, op->mem_disp_width);
+        ASSERT(op->reg_index == XED_REG_INVALID);
+        ASSERT(op->scale == 0);
+
+        if (op->reg_base == XED_REG_RIP) {
+            uint32_t jmp_size = 6;
+            new_op = dasm::maker();
+            ASSERT(op->mem_disp_width * sizeof(size_t) == 32);
+
+            size_t target_disp = target_addr + op->mem_disp;
+            size_t inst_end = m_inst_code->addr_remote() + m_inst_offset + 
+                inst_size + jmp_size;
+            //SAY_DEBUG("target + disp %p, inst end %p\n", target_disp,
+            //        inst_end);
+
+            xed_inst1(&new_op.enc_inst, new_op.dstate,
+                    XED_ICLASS_JMP, 64,
+                    xed_mem_bd(op->reg_base, xed_disp(
+                            target_disp - inst_end, 
+                            op->mem_disp_width * sizeof(size_t)), 64)
+                    );
+            new_size = new_op.make(buf + inst_size, buf_size + inst_size);
+            ASSERT(new_size == jmp_size);
+            inst_size += new_size;
+
+        }
+        else {
+            SAY_FATAL("Not rip relative mem ref\n");
+            
+        }
+    }
+    else {
+        SAY_INFO("Invalid call type, use --disasm to see which one\n");
+    }
+    return inst_size;
+}
+
 uint32_t translator::make_jump_from_orig_to_inst(
         size_t jump_from, size_t jump_to)
 {
@@ -128,11 +257,15 @@ uint32_t translator::make_jump_from_orig_to_inst(
     return new_inst_size;
 }
 
+
 // Here we do quite simple instrumentation. We instrument only one basic block
 // from the perspective of current pointer, meaning if then discovered jump to
 // the middle of existing basic block, we will create new one with partial code
 // duplication. We also do not follow any references in advance. 
 // This strategy leads to the instrumentation of only code wich is hit.
+
+// TODO: instrumentation stage (even all-at-once method) is slow: why? how to
+// improve it?
 size_t translator::instrument(size_t addr, 
         uint32_t* instrumented_size,
         uint32_t* original_size)
@@ -191,11 +324,22 @@ size_t translator::instrument(size_t addr,
 
         orig_size += op->size_orig;
 
-        auto inst_sz = op->rebuild_to_new_addr(
-                (uint8_t*)m_inst_code->addr_loc() + m_inst_offset,
-                m_inst_code->addr_loc_end() - local_addr,
-                remote_inst);
+        uint32_t inst_sz = 0;
+        if (m_opts.call_to_jmp &&
+            op->category == XED_CATEGORY_CALL) {
+            inst_sz = translate_call_to_jump(op, 
+                    (uint8_t*)m_inst_code->addr_loc() + m_inst_offset,
+                    m_inst_code->addr_loc_end() - local_addr,
+                    rip + op->size_orig);
+        }
+        else {
+            inst_sz = op->rebuild_to_new_addr(
+                    (uint8_t*)m_inst_code->addr_loc() + m_inst_offset,
+                    m_inst_code->addr_loc_end() - local_addr,
+                    remote_inst);
+        }
         ASSERT(inst_sz);
+
         m_inst_offset += inst_sz;
         inst_count += 1;
 

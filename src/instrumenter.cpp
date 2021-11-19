@@ -117,9 +117,9 @@ bool instrumenter::should_translate(size_t addr)
                 if (m_opts.is_bbs_inst) {
 
                     if (orig_size < 5) {
-                        SAY_ERROR("BB at %p has size %d (inst %d), we need at "
-                                "least 5 to make jump\n", 
-                                addr, inst_size, orig_size);
+                        //SAY_ERROR("BB at %p has size %d (inst %d), we need at "
+                        //        "least 5 to make jump\n", 
+                        //        addr, orig_size, inst_size);
                     }
                     else {
                         // Place jump
@@ -367,6 +367,7 @@ void instrumenter::instrument_module(size_t addr, const char* name)
             code_section->data.addr_remote());
     if (shadow_code_data) trans.set_shadow_code(shadow_code_data);
     if (m_bbs.size()) trans.set_bbs(&m_bbs);
+    trans.set_call_to_jump();
 
     if (m_opts.translator_debug)
         trans.set_debug();
