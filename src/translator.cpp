@@ -126,6 +126,12 @@ uint32_t translator::translate_call_to_jump(
     // pop rax
     // jmp <call ref>
 
+    // TODO: use TinyInst approach
+    // 00007ff6`c6bd0010 488da424f8ffffff lea     rsp,[rsp-8]
+    // 00007ff6`c6bd0018 c704248c10bec6   mov     dword ptr [rsp],0C6BE108Ch
+    // 00007ff6`c6bd001f c7442404f67f0000 mov     dword ptr [rsp+4],7FF6h
+    // 00007ff6`c6bd0027 e900000000       jmp     00007ff6`c6bd002c
+
     // push rax
     auto new_op = dasm::maker();
     xed_inst1(&new_op.enc_inst, new_op.dstate,
@@ -328,7 +334,8 @@ size_t translator::instrument(size_t addr,
             m_opts.shadow_code->addr_loc() + offset:
             m_text_sect->addr_loc() + offset;
         if (m_opts.debug)
-            SAY_DEBUG("Disasm (%x) local: %p remote: %p text sect remote: %p\n", 
+            SAY_DEBUG("Disasm (%x) local: %p remote: %p text sect remote: "
+                    "%p\n", 
                     offset, local_addr, rip, m_text_sect_remote_addr);
         auto op = m_dasm_cache.get(local_addr, rip, m_text_sect_remote_addr,
                 m_text_sect->addr_remote(), m_text_sect->size());

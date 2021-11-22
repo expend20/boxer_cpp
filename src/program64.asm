@@ -15,9 +15,10 @@ code_ref_in_data:
     dq data_sect_ref_to_code.ref_from_data
 some_var_in_text:
     dd 0x12345678
+jackalope_jumptable_var:
+    dq 0
 
 section .text
-
 
 simple_call:
 
@@ -29,6 +30,7 @@ jmp_dd_test:
     jmp [rel jmp_dd]
     ud2
 .jmp_dd_next:
+    xor al, al
     ret
     
 simple_loop:
@@ -98,7 +100,37 @@ simple_lea_and_call:
 .continue:
     ret
 
+
+jackalope_jumptable_jmp:
+    jmp [rel jackalope_jumptable_var] 
+
+
+jackalope_jumptable_test:
+
+    nop
+.stage1.end:
+    ret
+.stage2.end:
+    ret
+
+.stage1:
+    lea rax, [rel .stage1.end]
+    mov [rel jackalope_jumptable_var], rax
+    mov eax, 1
+    jmp jackalope_jumptable_jmp
+
+.stage2:
+    mov eax, 2
+    lea rax, [rel .stage2.end]
+    mov [rel jackalope_jumptable_var], rax
+    jmp jackalope_jumptable_jmp
+
 WinMain:
+    call jackalope_jumptable_test.stage1
+    call jackalope_jumptable_test.stage2
+    call jackalope_jumptable_test.stage1
+    call jackalope_jumptable_test.stage2
+    ret
 
     call jmp_dd_test
 

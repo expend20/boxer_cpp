@@ -114,12 +114,27 @@ bool instrumenter::should_translate(size_t addr)
                 inst_addr = trans->instrument(addr, &inst_size, &orig_size);
                 ASSERT(inst_addr);
 
-                if (m_opts.is_bbs_inst) {
+                if (m_opts.is_bbs_inst ||
+                        m_opts.is_int3_inst_blind) {
 
                     if (orig_size < 5) {
                         //SAY_ERROR("BB at %p has size %d (inst %d), we need at "
                         //        "least 5 to make jump\n", 
                         //        addr, orig_size, inst_size);
+
+                        // FIXME: restore orig data, just skip this
+                        //if (m_base_to_shadow.find(mod_base) != m_base_to_shadow.end()) {
+                        //    SAY_INFO("skipping cov...\n");
+                        //    auto shadow_sect = &m_base_to_shadow[mod_base];
+                        //    auto offset = addr - sect->data.addr_remote();
+                        //    //SAY_INFO("restoring orig: %p %p %x",
+                        //    //        (void*)(sect->data.addr_loc() + offset),
+                        //    //        (void*)(shadow_sect->addr_loc() + offset),
+                        //    //        orig_size);
+                        //    memcpy((void*)(sect->data.addr_loc() + offset),
+                        //            (void*)(shadow_sect->addr_loc() + offset),
+                        //            orig_size);
+                        //}
                     }
                     else {
                         // Place jump
@@ -224,8 +239,16 @@ void instrumenter::instrument_module(size_t addr, const char* name)
         inst_type = "int3";
     }
 
-    if (m_opts.debug) 
+    if (m_opts.debug) {
         SAY_INFO("Instrumenting %s %p %s...\n", inst_type, addr, name);
+    }
+
+    for (auto &m: m_modules) {
+        if (m.get_remote_addr() == addr) {
+            SAY_FATAL("Attempt to double instrument module at %p, %s\n",
+                    addr, name);
+        }
+    }
 
     auto hproc = m_debugger->get_proc_info()->hProcess;
     auto obj = pehelper::pe(hproc, addr);
@@ -333,6 +356,7 @@ void instrumenter::instrument_module(size_t addr, const char* name)
             &m_base_to_metadata[addr],
             &code_section->data,
             code_section->data.addr_remote());
+
     if (shadow_code_data) trans.set_shadow_code(shadow_code_data);
     if (m_bbs.size()) trans.set_bbs(&m_bbs);
 
@@ -383,7 +407,14 @@ void instrumenter::on_first_breakpoint()
     if (m_opts.debug) 
         SAY_INFO("on_first_breakpoint() reached\n");
     for (auto &[addr, mod_name]: m_remote_modules_list) {
-        if (should_instrument_module(mod_name.c_str()))
+        bool is_instrumented = false;
+        for (auto &m: m_modules) {
+            if (m.get_remote_addr() == addr) {
+                is_instrumented = true;
+                break;
+            }
+        }
+        if (!is_instrumented && should_instrument_module(mod_name.c_str()))
             instrument_module(addr, mod_name.c_str());
     }
 
@@ -400,8 +431,8 @@ DWORD instrumenter::handle_exception(EXCEPTION_DEBUG_INFO* dbg_info)
 
     if (m_opts.debug || !dbg_info->dwFirstChance) {
         SAY_INFO(
-                "Exception event: code %x | %s | %s, addr %p, flags %x, params %x"
-                ", is_int3 %d, dd_fix %d\n",
+                "Exception event: code %x | %s | %s, addr %p, flags %x, params "
+                "%x, is_int3 %d, dd_fix %d\n",
                 rec->ExceptionCode,
                 tools::get_exception_name(rec->ExceptionCode).c_str(),
                 dbg_info->dwFirstChance ? "first chance" : "second chance",
@@ -530,7 +561,7 @@ DWORD instrumenter::handle_debug_event(DEBUG_EVENT* dbg_event,
 
             // extract file name
             auto mod_name = tools::get_mod_name_by_handle(data.hFile);
-            if (m_opts.debug)
+            //if (m_opts.debug)
                 SAY_INFO("Module loaded %p %s\n",
                         data.lpBaseOfDll,
                         mod_name.c_str());
