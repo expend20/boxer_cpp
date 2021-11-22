@@ -61,13 +61,14 @@ class translator {
         size_t            m_inst_offset = 0;
         size_t            m_cov_offset = 0;
         size_t            m_text_sect_remote_addr = 0;
+        std::set<size_t>* m_bbs = 0;
+
         dasm::cached_code m_dasm_cache;
         translator_opts   m_opts;
 
         // Remote origin RIP to remote instrumented code
         std::map<size_t, size_t> m_remote_orig_to_inst_bb;
         std::set<size_t> m_remote_dd_refs;
-        std::set<size_t>* m_bbs;
 
         void fix_dd_refs();
 

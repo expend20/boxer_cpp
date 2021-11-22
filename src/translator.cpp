@@ -201,13 +201,14 @@ uint32_t translator::translate_call_to_jump(
         //SAY_DEBUG("XED_OPERAND_MEM0, reg = %s, disp = %x(%d)\n",
         //        xed_reg_enum_t2str(op->reg_base),
         //        op->mem_disp, op->mem_disp_width);
+        // TODO: use scale
         ASSERT(op->reg_index == XED_REG_INVALID);
         ASSERT(op->scale == 0);
 
         if (op->reg_base == XED_REG_RIP) {
             uint32_t jmp_size = 6;
             new_op = dasm::maker();
-            ASSERT(op->mem_disp_width * sizeof(size_t) == 32);
+            ASSERT(op->mem_disp_width * 8 == 32);
 
             size_t target_disp = target_addr + op->mem_disp;
             size_t inst_end = m_inst_code->addr_remote() + m_inst_offset + 
@@ -219,7 +220,7 @@ uint32_t translator::translate_call_to_jump(
                     XED_ICLASS_JMP, 64,
                     xed_mem_bd(op->reg_base, xed_disp(
                             target_disp - inst_end, 
-                            op->mem_disp_width * sizeof(size_t)), 64)
+                            op->mem_disp_width * 8), 64)
                     );
             new_size = new_op.make(buf + inst_size, buf_size + inst_size);
             ASSERT(new_size == jmp_size);
@@ -227,12 +228,37 @@ uint32_t translator::translate_call_to_jump(
 
         }
         else {
-            SAY_FATAL("Not rip relative mem ref\n");
-            
+            // call qword ptr [rax]
+            uint32_t jmp_size = op->size_orig;
+            new_op = dasm::maker();
+            //SAY_DEBUG("mem disp = %x, buf: %p\n", op->mem_disp_width, buf);
+
+            xed_inst1(&new_op.enc_inst, new_op.dstate,
+                    XED_ICLASS_JMP, 64,
+                    xed_mem_bd(op->reg_base, xed_disp(op->mem_disp, 
+                            op->mem_disp_width * 8), 64)
+                    );
+            new_size = new_op.make(buf + inst_size, buf_size + inst_size);
+            ASSERT(new_size == jmp_size);
+            inst_size += new_size;
+
         }
     }
+    else if (target_op_name == XED_OPERAND_REG0) {
+        // call rax
+        uint32_t jmp_size = op->size_orig;
+        new_op = dasm::maker();
+
+        xed_inst1(&new_op.enc_inst, new_op.dstate,
+                XED_ICLASS_JMP, 64,
+                xed_reg(op->reg0)
+                );
+        new_size = new_op.make(buf + inst_size, buf_size + inst_size);
+        ASSERT(new_size == jmp_size);
+        inst_size += new_size;
+    }
     else {
-        SAY_INFO("Invalid call type, use --disasm to see which one\n");
+        SAY_FATAL("Invalid call type, use --disasm to see which one\n");
     }
     return inst_size;
 }
@@ -363,7 +389,8 @@ size_t translator::instrument(size_t addr,
 
         if (op->is_iclass_jxx()) should_stop = true;
         if (m_opts.single_step) should_stop = true;
-        if (m_bbs->find(rip + op->size_orig) != m_bbs->end()) 
+        if (m_bbs &&
+                (m_bbs->find(rip + op->size_orig) != m_bbs->end()))
             should_stop = true;
         //|| op->category == XED_CATEGORY_CALL
 
