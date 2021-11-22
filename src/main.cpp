@@ -17,8 +17,8 @@ int main(int argc, const char** argv)
             GetBinaryOption("--help", argc, argv, false)) {
         SAY_INFO_RAW("Usage:\n\t%s --cov <mod> --cmd <cmd line>\n", argv[0]);
         SAY_INFO_RAW("Instrumentation options:\n\t"
-                "--inst_bbs_file --inst_int3 --fix_dd_refs"
-                "\n");
+                "--inst_bbs_file --inst_bbs_all --inst_int3_blind --fix_dd_refs"
+                " --call_to_jump\n");
         SAY_INFO_RAW("Debug options:\n\t"
                 "--disasm --show_flow --inst_debug --trans_debug --single_step"
                 "\n");
@@ -43,10 +43,23 @@ int main(int argc, const char** argv)
         ins.set_bbs_inst();
         ins.set_bbs_path(is_inst_bbs_path);
     }
-    auto is_inst_int3 = GetBinaryOption("--inst_int3", argc, argv, false);
-    if (is_inst_int3) {
-        SAY_INFO("inst_int3 = true\n");
-        ins.set_int3_inst();
+    auto is_inst_int3_blind = GetBinaryOption("--inst_int3_blind", 
+            argc, argv, false);
+    if (is_inst_int3_blind) {
+        SAY_INFO("inst_int3_blind = true\n");
+        ins.set_int3_inst_blind();
+    }
+    auto is_inst_bbs_all = GetBinaryOption("--inst_bbs_all", 
+            argc, argv, false);
+    if (is_inst_bbs_all) {
+        SAY_INFO("inst_bbs_all = true\n");
+        ins.set_bbs_inst_all();
+    }
+    auto is_call_to_jump = GetBinaryOption("--call_to_jump", 
+            argc, argv, false);
+    if (is_call_to_jump) {
+        SAY_INFO("call_to_jump = true\n");
+        ins.set_call_to_jump();
     }
 
     auto is_fix_dd_refs = GetBinaryOption("--fix_dd_refs", argc, argv, true);
@@ -82,7 +95,6 @@ int main(int argc, const char** argv)
         SAY_INFO("show_flow = true\n");
         ins.set_show_flow();
     }
-
 
     auto cmd = GetOption("--cmd", argc, argv);
     if (!cmd) {

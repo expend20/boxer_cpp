@@ -166,7 +166,7 @@ bool instrumenter::should_translate(size_t addr)
                         addr,  inst_addr,
                         ctx.Rax, ctx.Rax, ctx.Rcx, ctx.Rdx, ctx.R8, ctx.R9,
                         ctx.Rsp, ctx.Rbp, ctx.Rsi, ctx.Rdi);
-                if (m_opts.is_int3_inst || m_opts.is_bbs_inst) {
+                if (m_opts.is_int3_inst_blind || m_opts.is_bbs_inst) {
                     ASSERT(addr == ctx.Rip - 1);
                 }
                 else {
@@ -174,10 +174,7 @@ bool instrumenter::should_translate(size_t addr)
                 }
             }
 
-            if (m_opts.is_bbs_inst) {
-                tools::update_thread_rip(hThread, inst_addr);
-            }
-
+            tools::update_thread_rip(hThread, inst_addr);
 
             return true;
         }
@@ -246,7 +243,7 @@ void instrumenter::instrument_module(size_t addr, const char* name)
     mem_tool* shadow_code_data = 0;
 
     m_sections_patched.push_back(code_section);
-    if (m_opts.is_bbs_inst) {
+    if (m_opts.is_bbs_inst || m_opts.is_int3_inst_blind) {
         // create shadow memory
         size_t shadow_code_size = code_section->data.size();
         auto shadow_code_ptr = tools::alloc_after_pe_image(
@@ -270,60 +267,31 @@ void instrumenter::instrument_module(size_t addr, const char* name)
                     shadow_code_data->size());
         shadow_code_data->commit();
 
-        // fill text with int3s based on bbs file
-        auto offsets = helper::files2Vector(m_opts.bbs_path);
-        uint32_t* ptr = (uint32_t*)&offsets[0][0];
-        for (size_t i = 0; i < offsets[0].size() / 4; i++) {
-            m_bbs.insert(ptr[i] + addr);
-            uint32_t sect_offset = ptr[i] - 
-                code_section->sect_head.VirtualAddress;
-            *(uint8_t*)(code_section->data.addr_loc() + sect_offset) = 0xcc;
+        if (m_opts.is_bbs_inst) {
+            // fill text with int3s based on bbs file
+            auto offsets = helper::files2Vector(m_opts.bbs_path);
+            uint32_t* ptr = (uint32_t*)&offsets[0][0];
+            for (size_t i = 0; i < offsets[0].size() / 4; i++) {
+                m_bbs.insert(ptr[i] + addr);
+                uint32_t sect_offset = ptr[i] - 
+                    code_section->sect_head.VirtualAddress;
+                *(uint8_t*)(code_section->data.addr_loc() + sect_offset) = 0xcc;
+            }
+            SAY_INFO("%d offsets patched to int3\n", offsets[0].size());
         }
-        SAY_INFO("%d offsets patched to int3\n", offsets[0].size());
+        else {
+            // fill text with int3s
+            memset((void*)code_section->data.addr_loc(), 
+                    0xcc,
+                    code_section->data.size());
+        }
 
         code_section->data.commit();
-        img_end = shadow_code_ptr + shadow_code_size;
-    }
-    else if (m_opts.is_int3_inst) {
-        // create shadow memory
-        size_t shadow_code_size = code_section->data.size();
-        auto shadow_code_ptr = tools::alloc_after_pe_image(
-                hproc,
-                img_end,
-                shadow_code_size,
-                PAGE_READONLY);
-        ASSERT(shadow_code_ptr);
-        m_base_to_shadow[addr] = mem_tool(hproc, shadow_code_ptr, 
-                shadow_code_size);
-        shadow_code_data = &m_base_to_shadow[addr];
-
-        // copy text to shadow
-        memcpy((void*)shadow_code_data->addr_loc(),
-                (void*)code_section->data.addr_loc(), 
-                shadow_code_data->size());
-        if (m_opts.debug) 
-            SAY_INFO("copied loc %p %p %x\n",
-                    (void*)shadow_code_data->addr_loc(),
-                    (void*)code_section->data.addr_loc(), 
-                    shadow_code_data->size());
-        shadow_code_data->commit();
-
-        // fill text with int3s
-        memset((void*)code_section->data.addr_loc(), 
-                0xcc,
-                code_section->data.size());
-        code_section->data.commit();
-
-        // fix references to code from other sections
-        //patch_references_to_section(pe, 
-        //        code_section, shadow_code_data->addr_remote());
-        
         img_end = shadow_code_ptr + shadow_code_size;
     }
     else { 
         // dep mode
         code_section->data.make_non_executable();
-
     }
 
     // get instrumentation buffer
@@ -367,7 +335,10 @@ void instrumenter::instrument_module(size_t addr, const char* name)
             code_section->data.addr_remote());
     if (shadow_code_data) trans.set_shadow_code(shadow_code_data);
     if (m_bbs.size()) trans.set_bbs(&m_bbs);
-    trans.set_call_to_jump();
+
+    if (m_opts.call_to_jump) {
+        trans.set_call_to_jump();
+    }
 
     if (m_opts.translator_debug)
         trans.set_debug();
@@ -383,7 +354,10 @@ void instrumenter::instrument_module(size_t addr, const char* name)
 
     m_base_to_translator[addr] = trans;
 
-    if (m_bbs.size()) translate_all_bbs();
+    if (m_opts.is_bbs_inst_all &&
+            m_bbs.size()) {
+        translate_all_bbs();
+    }
 
 }
 
@@ -434,11 +408,11 @@ DWORD instrumenter::handle_exception(EXCEPTION_DEBUG_INFO* dbg_info)
                 rec->ExceptionAddress,
                 rec->ExceptionFlags,
                 rec->NumberParameters,
-                m_opts.is_int3_inst,
+                m_opts.is_int3_inst_blind,
                 m_opts.fix_dd_refs);
 
         for (uint32_t i = 0; i < rec->NumberParameters; i++) {
-            SAY_DEBUG("\tEx info %d: %p\n", i, rec->ExceptionInformation[i]);
+            SAY_INFO("\tEx info %d: %p\n", i, rec->ExceptionInformation[i]);
         }
     }
     if (!dbg_info->dwFirstChance) {
@@ -461,7 +435,7 @@ DWORD instrumenter::handle_exception(EXCEPTION_DEBUG_INFO* dbg_info)
             if (rec->NumberParameters == 2 &&
                     rec->ExceptionInformation[0] == 8 && // DEP
                     rec->ExceptionInformation[1]) {
-                if (!m_opts.is_int3_inst &&
+                if (!m_opts.is_int3_inst_blind &&
                         should_translate(rec->ExceptionInformation[1]))
                     continue_status = DBG_CONTINUE;
             }
@@ -472,6 +446,7 @@ DWORD instrumenter::handle_exception(EXCEPTION_DEBUG_INFO* dbg_info)
             if (m_stats.breakpoints == 1) {
                 // if it's first breakpoint, it's debugger's one
                 on_first_breakpoint();
+                continue_status = DBG_CONTINUE;
             } else {
                 if (//(m_opts.is_int3_inst || m_opts.is_bbs_inst) &&
                         should_translate((size_t)rec->ExceptionAddress)) {
@@ -519,21 +494,19 @@ DWORD instrumenter::handle_debug_event(DEBUG_EVENT* dbg_event,
         SAY_DEBUG("Instrumentor::handle_debug_event: %x / %x\n", 
                 dbg_event->dwDebugEventCode,
                 m_stats.dbg_callbaks);
-        //if (m_stats.dbg_callbaks > 0x10000) {
-        //    // TODO:
-        //    {
-        //        SAY_INFO("Stopping at %x iteration\n", m_stats.dbg_callbaks);
-        //        auto pi = m_debugger->get_proc_info();
-        //        tools::write_minidump("exit_process.dmp", pi, NULL);
-        //        print_stats();
-        //        m_debugger->stop();
-        //    }
-        //}
     }
+    // FIXME: make option, or remove
+    //if (m_stats.dbg_callbaks > 30) {
+    //    SAY_INFO("Stopping at %x iteration\n", m_stats.dbg_callbaks);
+    //    auto pi = m_debugger->get_proc_info();
+    //    tools::write_minidump("exit_process.dmp", pi, NULL);
+    //    print_stats();
+    //    m_debugger->stop();
+    //}
     m_debugger = debugger;
     m_dbg_event = dbg_event;
     m_stats.dbg_callbaks++;
-    auto continue_status = DBG_CONTINUE;//DBG_EXCEPTION_NOT_HANDLED;
+    auto continue_status = DBG_EXCEPTION_NOT_HANDLED;
 
     switch (dbg_event->dwDebugEventCode) {
         case CREATE_PROCESS_DEBUG_EVENT: {
@@ -562,6 +535,14 @@ DWORD instrumenter::handle_debug_event(DEBUG_EVENT* dbg_event,
                         data.lpBaseOfDll,
                         mod_name.c_str());
             m_remote_modules_list[(size_t)data.lpBaseOfDll] = mod_name;
+
+            // TODO: is it really appropriate tactic? What if dll will be 
+            // unloaded?
+
+            if (!m_modules.size() && 
+                    should_instrument_module(mod_name.c_str())){
+                instrument_module((size_t)data.lpBaseOfDll, mod_name.c_str());
+            }
 
             break;
         }

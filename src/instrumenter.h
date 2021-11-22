@@ -19,8 +19,10 @@ struct instrumenter_stats {
 };
 
 struct instrumenter_options {
-    bool is_int3_inst = false;
+    bool is_int3_inst_blind = false;
     bool is_bbs_inst = false;
+    bool is_bbs_inst_all = false;
+    bool call_to_jump = false;
     const char* bbs_path = 0;
     bool fix_dd_refs = false;
     bool debug = false;
@@ -40,8 +42,9 @@ class instrumenter: public idebug_handler {
         void print_stats();
 
         // opts setters
-        void set_int3_inst() { m_opts.is_int3_inst = true; };
+        void set_int3_inst_blind() { m_opts.is_int3_inst_blind = true; };
         void set_bbs_inst() { m_opts.is_bbs_inst = true; };
+        void set_bbs_inst_all() { m_opts.is_bbs_inst_all = true; };
         void set_bbs_path(const char* p) { m_opts.bbs_path = p; };
         void set_fix_dd_refs() { m_opts.fix_dd_refs = true; };
         void set_debug() { m_opts.debug = true; };
@@ -49,6 +52,7 @@ class instrumenter: public idebug_handler {
         void set_trans_debug() { m_opts.translator_debug = true; };
         void set_trans_disasm() { m_opts.translator_disasm = true; };
         void set_trans_single_step() { m_opts.translator_single_step = true; };
+        void set_call_to_jump() { m_opts.call_to_jump = true; };
 
     private:
 
