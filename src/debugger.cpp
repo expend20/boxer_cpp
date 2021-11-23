@@ -48,7 +48,7 @@ debugger::~debugger() {
 
 void debugger::run(size_t steps) {
 
-    //if (!m_handler) SAY_FATAL("Run attempt without handler registered");
+    if (!m_handler) SAY_FATAL("Run attempt without handler registered");
 
     for (size_t i = 0; i < steps; i++) {
         if (m_stopped) break;
@@ -59,7 +59,6 @@ void debugger::run(size_t steps) {
         auto continue_status =
             m_handler->handle_debug_event(&m_debug_event, this);
 
-        // TODO: debug only
         switch (continue_status) {
             case DBG_CONTINUE:
                 SAY_DEBUG("sending DBG_CONTINUE\n");

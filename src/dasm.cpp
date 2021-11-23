@@ -47,11 +47,11 @@ size_t dasm::opcode::rebuild_to_new_addr(
     xed_error_enum_t xed_error;
 
     if (!should_rebuild) {
-        // just copy the instructions
-        // TODO: replace to memcpy, beware, if we rebuild, size might change
-        xed_error = xed_encode(
-                &xedd, (unsigned char*)buf, buf_size, &size_new);
-        //ASSERT(size_orig == size_new);
+        // just copy the instructions, for speeding up the process
+        //xed_error = xed_encode(
+        //        &xedd, (unsigned char*)buf, buf_size, &size_new);
+        memcpy(buf, (void*)opcode_data, size_orig);
+        size_new = size_orig;
     } else {
 
         xed_error = xed_encode(&xedd, (unsigned char*)buf, buf_size, &size_new);
@@ -95,7 +95,10 @@ bool dasm::opcode::fix_branch_disp(size_t new_addr){
 bool dasm::opcode::fix_mem_disp(size_t new_addr){
     if (mem_disp_width && reg_base == XED_REG_RIP) {
         auto tgt_addr = addr + mem_disp + size_orig;
-        // TODO: it's not that easy :(
+        // NOTE: this is an example of fixing the memory references (not to be 
+        // confused with branch references) to code section. Unfortunately
+        // this ends up by redirecting the execution to that shadow region,
+        // which is not the thing we want to.
         //if (tgt_addr >= code_sect_orig && 
         //        tgt_addr < (code_sect_orig + code_sect_size)) {
         //    if (g_debug)
@@ -192,6 +195,8 @@ dasm::opcode::opcode(size_t data, size_t addr_arg) {
     }
 
     size_orig   = xed_decoded_inst_get_length(&xedd);
+    ASSERT(sizeof(opcode_data) >= size_orig);
+    memcpy(opcode_data, (void*)data, size_orig);
     iclass      = xed_decoded_inst_get_iclass(&xedd);
     reg_base    = xed_decoded_inst_get_base_reg(&xedd, 0);
     mem_ops_num = xed_decoded_inst_number_of_memory_operands(&xedd);

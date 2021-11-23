@@ -15,7 +15,7 @@ namespace pehelper {
             std::string          name;
             IMAGE_SECTION_HEADER sect_head;
             mem_tool             data;
-
+            size_t               mod_base = 0;
     };
 
 #ifdef _WIN64

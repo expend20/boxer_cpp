@@ -29,16 +29,9 @@ void instrumenter::translate_all_bbs()
         }
 
         if (!mod_base) {
-            // FIXME: 0x1000 offset shouldn't be hardcoded
-            for (auto &m: m_modules) {
-                if (m.get_remote_addr() == 
-                        code_sect->data.addr_remote() - 0x1000) {
-                    mod_base = code_sect->data.addr_remote() - 0x1000;
-                    break;
-                }
-            }
+            mod_base = code_sect->mod_base;
             ASSERT(mod_base);
-            trans = &m_base_to_translator[mod_base];
+            trans = &m_base_to[mod_base].translator;
             ASSERT(trans);
         }
 
@@ -69,7 +62,7 @@ void instrumenter::translate_all_bbs()
 
     // Call commit on inst code
     code_sect->data.commit();
-    m_base_to_inst[mod_base].commit();
+    m_base_to[mod_base].inst.commit();
     auto r = FlushInstructionCache(
             m_debugger->get_proc_info()->hProcess,
             (void*)code_sect->data.addr_remote(), 
@@ -90,17 +83,9 @@ bool instrumenter::should_translate(size_t addr)
                 SAY_DEBUG("That's we patched the code %p\n", addr);
             // That's we've patched the code, let's check if it's already 
             // instrumented
-            // FIXME: 0x1000 offset shouldn't be hardcoded
-            size_t mod_base = 0;
-            for (auto &m: m_modules) {
-                if (m.get_remote_addr() == start - 0x1000) {
-                    mod_base = start - 0x1000;
-                    break;
-                }
-            }
-            ASSERT(mod_base);
+            size_t mod_base = sect->mod_base;
 
-            auto trans = &m_base_to_translator[mod_base];
+            auto trans = &m_base_to[mod_base].translator;
             ASSERT(trans);
 
             size_t inst_addr = trans->remote_orig_to_inst_bb(addr);
@@ -122,10 +107,11 @@ bool instrumenter::should_translate(size_t addr)
                         //        "least 5 to make jump\n", 
                         //        addr, orig_size, inst_size);
 
-                        // FIXME: restore orig data, just skip this
-                        //if (m_base_to_shadow.find(mod_base) != m_base_to_shadow.end()) {
+                        // NOTE: restoring the orig data, could be a solution
+                        // if we decide skip bbs 
+                        //if (m_base_to[mod_base].shadow.size())) {
                         //    SAY_INFO("skipping cov...\n");
-                        //    auto shadow_sect = &m_base_to_shadow[mod_base];
+                        //    auto shadow_sect = &m_base_to[mod_base].shadow;
                         //    auto offset = addr - sect->data.addr_remote();
                         //    //SAY_INFO("restoring orig: %p %p %x",
                         //    //        (void*)(sect->data.addr_loc() + offset),
@@ -152,7 +138,7 @@ bool instrumenter::should_translate(size_t addr)
                 }
 
                 // Call commit on inst code
-                m_base_to_inst[mod_base].commit();
+                m_base_to[mod_base].inst.commit();
 
                 auto r = FlushInstructionCache(
                         m_debugger->get_proc_info()->hProcess,
@@ -161,7 +147,6 @@ bool instrumenter::should_translate(size_t addr)
                 ASSERT(r);
             }
 
-            // TODO: review all code with pid/tid references in mind
             auto hThread = m_tid_to_handle[m_dbg_event->dwThreadId];
             if (!hThread) {
                 hThread = OpenThread(THREAD_ALL_ACCESS, FALSE, 
@@ -275,9 +260,9 @@ void instrumenter::instrument_module(size_t addr, const char* name)
                 shadow_code_size,
                 PAGE_READONLY);
         ASSERT(shadow_code_ptr);
-        m_base_to_shadow[addr] = mem_tool(hproc, shadow_code_ptr, 
+        m_base_to[addr].shadow = mem_tool(hproc, shadow_code_ptr, 
                 shadow_code_size);
-        shadow_code_data = &m_base_to_shadow[addr];
+        shadow_code_data = &m_base_to[addr].shadow;
 
         // copy text to shadow
         memcpy((void*)shadow_code_data->addr_loc(),
@@ -327,7 +312,7 @@ void instrumenter::instrument_module(size_t addr, const char* name)
     ASSERT(code_inst);
     auto mem_inst = mem_tool(hproc, code_inst, code_inst_size);
     mem_inst.read();
-    m_base_to_inst[addr] = mem_inst;
+    m_base_to[addr].inst = mem_inst;
 
     // get coverage buffer
     size_t cov_buf_size = img_size;
@@ -337,7 +322,7 @@ void instrumenter::instrument_module(size_t addr, const char* name)
             PAGE_READWRITE);
     ASSERT(cov_buf);
     auto mem_cov = mem_tool(hproc, cov_buf, cov_buf_size);
-    m_base_to_cov[addr] = mem_cov;
+    m_base_to[addr].cov = mem_cov;
 
     // get metadata buffer
     size_t meta_buf_size = img_size;
@@ -346,14 +331,14 @@ void instrumenter::instrument_module(size_t addr, const char* name)
             meta_buf_size,
             PAGE_READWRITE);
     ASSERT(meta_buf);
-    m_base_to_cov[addr] = mem_cov;
+    m_base_to[addr].cov = mem_cov;
 
     // check 2gb limit, for relative data access
     ASSERT((meta_buf + meta_buf_size) - addr < 0x7fffffff);
 
-    auto trans = translator(&m_base_to_inst[addr],
-            &m_base_to_cov[addr],
-            &m_base_to_metadata[addr],
+    auto trans = translator(&m_base_to[addr].inst,
+            &m_base_to[addr].cov,
+            &m_base_to[addr].metadata,
             &code_section->data,
             code_section->data.addr_remote());
 
@@ -376,7 +361,7 @@ void instrumenter::instrument_module(size_t addr, const char* name)
     if (m_opts.translator_single_step)
         trans.set_single_step();
 
-    m_base_to_translator[addr] = trans;
+    m_base_to[addr].translator = trans;
 
     if (m_opts.is_bbs_inst_all &&
             m_bbs.size()) {
@@ -406,7 +391,7 @@ void instrumenter::on_first_breakpoint()
 {
     if (m_opts.debug) 
         SAY_INFO("on_first_breakpoint() reached\n");
-    for (auto &[addr, mod_name]: m_remote_modules_list) {
+    for (auto &[addr, mod_info]: m_base_to) {
         bool is_instrumented = false;
         for (auto &m: m_modules) {
             if (m.get_remote_addr() == addr) {
@@ -414,8 +399,9 @@ void instrumenter::on_first_breakpoint()
                 break;
             }
         }
-        if (!is_instrumented && should_instrument_module(mod_name.c_str()))
-            instrument_module(addr, mod_name.c_str());
+        if (!is_instrumented && should_instrument_module(
+                    mod_info.module_name.c_str()))
+            instrument_module(addr, mod_info.module_name.c_str());
     }
 
 }
@@ -492,7 +478,6 @@ DWORD instrumenter::handle_exception(EXCEPTION_DEBUG_INFO* dbg_info)
             break;
         }
         default: {
-            // TODO:
             SAY_ERROR("Invalid exception code %x\n",
                     rec->ExceptionCode);
         }
@@ -548,7 +533,7 @@ DWORD instrumenter::handle_debug_event(DEBUG_EVENT* dbg_event,
                 SAY_DEBUG("Program loaded %p %s\n",
                         data.lpBaseOfImage,
                         mod_name.c_str());
-            m_remote_modules_list[(size_t)data.lpBaseOfImage] = mod_name;
+            m_base_to[(size_t)data.lpBaseOfImage].module_name = mod_name;
 
             CloseHandle(data.hFile);
             break;
@@ -562,14 +547,11 @@ DWORD instrumenter::handle_debug_event(DEBUG_EVENT* dbg_event,
 
             // extract file name
             auto mod_name = tools::get_mod_name_by_handle(data.hFile);
-            //if (m_opts.debug)
+            if (m_opts.debug)
                 SAY_INFO("Module loaded %p %s\n",
                         data.lpBaseOfDll,
                         mod_name.c_str());
-            m_remote_modules_list[(size_t)data.lpBaseOfDll] = mod_name;
-
-            // TODO: is it really appropriate tactic? What if dll will be 
-            // unloaded?
+            m_base_to[(size_t)data.lpBaseOfDll].module_name = mod_name;
 
             if (!m_modules.size() && 
                     should_instrument_module(mod_name.c_str())){
@@ -605,7 +587,7 @@ DWORD instrumenter::handle_debug_event(DEBUG_EVENT* dbg_event,
             auto data = dbg_event->u.ExitProcess;
             if (m_opts.debug) 
                 SAY_INFO("Exiting process with %d\n", data.dwExitCode);
-            // TODO: 
+            // Creating dump on exitprocess
             {
                 auto pi = m_debugger->get_proc_info();
                 tools::write_minidump("exit_process.dmp", pi, NULL);

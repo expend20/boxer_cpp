@@ -33,6 +33,15 @@ struct instrumenter_options {
     size_t stop_at = 0;
 };
 
+struct instrumenter_module_data {
+    std::string module_name;
+    mem_tool    shadow;
+    mem_tool    inst;
+    mem_tool    cov;
+    mem_tool    metadata;
+    translator  translator;
+};
+
 class instrumenter: public idebug_handler {
 
     public:
@@ -79,14 +88,7 @@ class instrumenter: public idebug_handler {
         std::vector<pehelper::section*> m_sections_patched;
         std::map<size_t, size_t> m_sect_base_to_module;
 
-        // TODO: refactor all base_to* to one map with struct perhaps?
-        std::map<size_t, std::string> m_remote_modules_list;
-        std::map<size_t, mem_tool> m_base_to_shadow;
-        std::map<size_t, mem_tool> m_base_to_inst;
-        std::map<size_t, mem_tool> m_base_to_cov;
-        std::map<size_t, mem_tool> m_base_to_metadata;
-        std::map<size_t, translator> m_base_to_translator;
-
+        std::map<size_t, instrumenter_module_data> m_base_to;
         std::map<DWORD, HANDLE> m_tid_to_handle;
 
         std::set<size_t> m_bbs;

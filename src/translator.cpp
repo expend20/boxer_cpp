@@ -116,7 +116,48 @@ uint32_t translator::translate_call_to_jump(
     // make push
     uint32_t inst_size = 0;
     //SAY_DEBUG("Making push... %p %d\n", buf, buf_size);
-    // There is no `push <imm64>` or `mov [rsp], <imm64>` instruction, we need
+
+    // TinyInst approach:
+    // lea     rsp,[rsp-8]
+    // mov     dword ptr [rsp],0C6BE108Ch
+    // mov     dword ptr [rsp+4],7FF6h
+    // jmp     00007ff6`c6bd002c
+
+    // sub rsp, 8
+    auto new_op = dasm::maker();
+    xed_inst2(&new_op.enc_inst, new_op.dstate,
+            XED_ICLASS_SUB, 64,
+            xed_reg(XED_REG_RSP),
+            xed_imm0(8, 8)
+            );
+    auto new_size = new_op.make(buf, buf_size);
+    ASSERT(new_size == 4);
+    inst_size += new_size;
+
+    // mov     dword ptr [rsp],0C6BE108Ch
+    new_op = dasm::maker();
+    xed_inst2(&new_op.enc_inst, new_op.dstate,
+            XED_ICLASS_MOV, 0,
+            xed_mem_b(XED_REG_RSP, 32),
+            xed_imm0(target_addr & 0xffffffff, 32)
+            );
+    new_size = new_op.make(buf + inst_size, buf_size - inst_size);
+    ASSERT(new_size == 7);
+    inst_size += new_size;
+
+    // mov     dword ptr [rsp+4],7FF6h
+    new_op = dasm::maker();
+    xed_inst2(&new_op.enc_inst, new_op.dstate,
+            XED_ICLASS_MOV, 0,
+            xed_mem_bd(XED_REG_RSP, xed_disp(4, 8), 32),
+            xed_imm0((target_addr >> 32) & 0xffffffff, 32)
+            );
+    new_size = new_op.make(buf + inst_size, buf_size - inst_size);
+    ASSERT(new_size == 8);
+    inst_size += new_size;
+
+    // NOTE: the same code but looks redundant:
+    // There is no `push <imm64>` or `mov [rsp], <imm64>` instruction, we can
     // to use register:
     //
     // push rax
@@ -125,62 +166,56 @@ uint32_t translator::translate_call_to_jump(
     // mov [rsp + 8], rax
     // pop rax
     // jmp <call ref>
+    //
+    //// push rax
+    //auto new_op = dasm::maker();
+    //xed_inst1(&new_op.enc_inst, new_op.dstate,
+    //        XED_ICLASS_PUSH, 64,
+    //        xed_reg(XED_REG_RAX));
+    //auto new_size = new_op.make(buf, buf_size);
+    //ASSERT(new_size == 1);
+    //inst_size += new_size;
 
-    // TODO: use TinyInst approach
-    // 00007ff6`c6bd0010 488da424f8ffffff lea     rsp,[rsp-8]
-    // 00007ff6`c6bd0018 c704248c10bec6   mov     dword ptr [rsp],0C6BE108Ch
-    // 00007ff6`c6bd001f c7442404f67f0000 mov     dword ptr [rsp+4],7FF6h
-    // 00007ff6`c6bd0027 e900000000       jmp     00007ff6`c6bd002c
+    //// push rax
+    //new_op = dasm::maker();
+    //xed_inst1(&new_op.enc_inst, new_op.dstate,
+    //        XED_ICLASS_PUSH, 64,
+    //        xed_reg(XED_REG_RAX));
+    //new_size = new_op.make(buf + inst_size, buf_size - inst_size);
+    //ASSERT(new_size == 1);
+    //inst_size += new_size;
 
-    // push rax
-    auto new_op = dasm::maker();
-    xed_inst1(&new_op.enc_inst, new_op.dstate,
-            XED_ICLASS_PUSH, 64,
-            xed_reg(XED_REG_RAX));
-    auto new_size = new_op.make(buf, buf_size);
-    ASSERT(new_size == 1);
-    inst_size += new_size;
+    //// mov rax, imm64
+    //new_op = dasm::maker();
+    //xed_inst2(&new_op.enc_inst, new_op.dstate,
+    //        XED_ICLASS_MOV, 64,
+    //        xed_reg(XED_REG_RAX),
+    //        xed_imm0(target_addr, 64));
+    //new_size = new_op.make(buf + inst_size, buf_size - inst_size);
+    //ASSERT(new_size == 10);
+    //inst_size += new_size;
 
-    // push rax
-    new_op = dasm::maker();
-    xed_inst1(&new_op.enc_inst, new_op.dstate,
-            XED_ICLASS_PUSH, 64,
-            xed_reg(XED_REG_RAX));
-    new_size = new_op.make(buf + inst_size, buf_size + inst_size);
-    ASSERT(new_size == 1);
-    inst_size += new_size;
+    //// mov [rsp+8], rax
+    //new_op = dasm::maker();
+    //xed_inst2(&new_op.enc_inst, new_op.dstate,
+    //        XED_ICLASS_MOV, 64,
+    //        xed_mem_bd(XED_REG_RSP, xed_disp(8, 8), 64),
+    //        xed_reg(XED_REG_RAX)
+    //        );
+    //new_size = new_op.make(buf + inst_size, buf_size - inst_size);
+    //ASSERT(new_size == 5);
+    //inst_size += new_size;
 
-    // mov rax, imm64
-    new_op = dasm::maker();
-    xed_inst2(&new_op.enc_inst, new_op.dstate,
-            XED_ICLASS_MOV, 64,
-            xed_reg(XED_REG_RAX),
-            xed_imm0(target_addr, 64));
-    new_size = new_op.make(buf + inst_size, buf_size + inst_size);
-    ASSERT(new_size == 10);
-    inst_size += new_size;
+    //// pop rax
+    //new_op = dasm::maker();
+    //xed_inst1(&new_op.enc_inst, new_op.dstate,
+    //        XED_ICLASS_POP, 64,
+    //        xed_reg(XED_REG_RAX));
+    //new_size = new_op.make(buf + inst_size, buf_size - inst_size);
+    //ASSERT(new_size == 1);
+    //inst_size += new_size;
 
-    // mov [rsp+8], rax
-    new_op = dasm::maker();
-    xed_inst2(&new_op.enc_inst, new_op.dstate,
-            XED_ICLASS_MOV, 64,
-            xed_mem_bd(XED_REG_RSP, xed_disp(8, 8), 64),
-            xed_reg(XED_REG_RAX)
-            );
-    new_size = new_op.make(buf + inst_size, buf_size + inst_size);
-    ASSERT(new_size == 5);
-    inst_size += new_size;
-
-    // pop rax
-    new_op = dasm::maker();
-    xed_inst1(&new_op.enc_inst, new_op.dstate,
-            XED_ICLASS_POP, 64,
-            xed_reg(XED_REG_RAX));
-    new_size = new_op.make(buf + inst_size, buf_size + inst_size);
-    ASSERT(new_size == 1);
-    inst_size += new_size;
-
-    ASSERT(inst_size == 18);
+    //ASSERT(inst_size == 18);
 
     // making jump, get target operand
     auto target_op_name = xed_operand_name(op->first_op);
@@ -199,7 +234,7 @@ uint32_t translator::translate_call_to_jump(
                 XED_ICLASS_JMP, 32,
                 xed_relbr(target_branch - inst_end,  32)
                 );
-        new_size = new_op.make(buf + inst_size, buf_size + inst_size);
+        new_size = new_op.make(buf + inst_size, buf_size - inst_size);
         ASSERT(new_size == 5);
         inst_size += new_size;
     } 
@@ -228,7 +263,7 @@ uint32_t translator::translate_call_to_jump(
                             target_disp - inst_end, 
                             op->mem_disp_width * 8), 64)
                     );
-            new_size = new_op.make(buf + inst_size, buf_size + inst_size);
+            new_size = new_op.make(buf + inst_size, buf_size - inst_size);
             ASSERT(new_size == jmp_size);
             inst_size += new_size;
 
@@ -244,7 +279,7 @@ uint32_t translator::translate_call_to_jump(
                     xed_mem_bd(op->reg_base, xed_disp(op->mem_disp, 
                             op->mem_disp_width * 8), 64)
                     );
-            new_size = new_op.make(buf + inst_size, buf_size + inst_size);
+            new_size = new_op.make(buf + inst_size, buf_size - inst_size);
             ASSERT(new_size == jmp_size);
             inst_size += new_size;
 
@@ -259,13 +294,14 @@ uint32_t translator::translate_call_to_jump(
                 XED_ICLASS_JMP, 64,
                 xed_reg(op->reg0)
                 );
-        new_size = new_op.make(buf + inst_size, buf_size + inst_size);
+        new_size = new_op.make(buf + inst_size, buf_size - inst_size);
         ASSERT(new_size == jmp_size);
         inst_size += new_size;
     }
     else {
         SAY_FATAL("Invalid call type, use --disasm to see which one\n");
     }
+
     return inst_size;
 }
 

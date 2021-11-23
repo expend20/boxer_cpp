@@ -312,6 +312,7 @@ void pehelper::pe::extract_sections() {
         char name[9] = {0};
         memcpy(name, sect->Name, sizeof(sect->Name));
         s.name = name;
+        s.mod_base = m_remote_addr;
 
         m_sections.push_back(s);
 
