@@ -18,7 +18,7 @@ int main(int argc, const char** argv)
         SAY_INFO_RAW("Usage:\n\t%s --cov <mod> --cmd <cmd line>\n", argv[0]);
         SAY_INFO_RAW("Instrumentation options:\n\t"
                 "--inst_bbs_file --inst_bbs_all --inst_int3_blind --fix_dd_refs"
-                " --call_to_jump\n");
+                " --call_to_jump --stop_at {num}\n");
         SAY_INFO_RAW("Debug options:\n\t"
                 "--disasm --show_flow --inst_debug --trans_debug --single_step"
                 "\n");
@@ -94,6 +94,13 @@ int main(int argc, const char** argv)
     if (is_show_flow) {
         SAY_INFO("show_flow = true\n");
         ins.set_show_flow();
+    }
+
+    auto stop_at = GetOption("--stop_at", argc, argv);
+    if (stop_at) {
+        uint32_t cycles = atoi(stop_at);
+        SAY_ERROR("stop_at = %d\n", cycles);
+        ins.set_stop_at(cycles);
     }
 
     auto cmd = GetOption("--cmd", argc, argv);

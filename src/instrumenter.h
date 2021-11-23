@@ -30,6 +30,7 @@ struct instrumenter_options {
     bool translator_debug = false;
     bool translator_disasm = false;
     bool translator_single_step = false;
+    size_t stop_at = 0;
 };
 
 class instrumenter: public idebug_handler {
@@ -53,6 +54,7 @@ class instrumenter: public idebug_handler {
         void set_trans_disasm() { m_opts.translator_disasm = true; };
         void set_trans_single_step() { m_opts.translator_single_step = true; };
         void set_call_to_jump() { m_opts.call_to_jump = true; };
+        void set_stop_at(size_t v) { m_opts.stop_at = v; };
 
     private:
 

@@ -526,14 +526,15 @@ DWORD instrumenter::handle_debug_event(DEBUG_EVENT* dbg_event,
                 dbg_event->dwDebugEventCode,
                 m_stats.dbg_callbaks);
     }
-    // FIXME: make option, or remove
-    //if (m_stats.dbg_callbaks > 30) {
-    //    SAY_INFO("Stopping at %x iteration\n", m_stats.dbg_callbaks);
-    //    auto pi = m_debugger->get_proc_info();
-    //    tools::write_minidump("exit_process.dmp", pi, NULL);
-    //    print_stats();
-    //    m_debugger->stop();
-    //}
+    if (m_opts.stop_at &&
+            m_stats.dbg_callbaks >= m_opts.stop_at) {
+        SAY_INFO("Stopping at iteration # %d\n", m_stats.dbg_callbaks);
+        auto pi = m_debugger->get_proc_info();
+        tools::write_minidump("stop_at.dmp", pi, NULL);
+        print_stats();
+        m_debugger->stop();
+    }
+
     m_debugger = debugger;
     m_dbg_event = dbg_event;
     m_stats.dbg_callbaks++;
