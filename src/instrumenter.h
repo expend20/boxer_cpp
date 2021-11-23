@@ -16,6 +16,7 @@ struct instrumenter_stats {
     size_t avs = 0;
     size_t translator_called = 0;
     size_t rip_redirections = 0;
+    size_t bb_skipped = 0;
 };
 
 struct instrumenter_options {
@@ -26,6 +27,7 @@ struct instrumenter_options {
     const char* bbs_path = 0;
     bool fix_dd_refs = false;
     bool debug = false;
+    bool skip_small_bb = false;
     bool show_flow = false;
     bool translator_debug = false;
     bool translator_disasm = false;
@@ -63,6 +65,7 @@ class instrumenter: public idebug_handler {
         void set_trans_disasm() { m_opts.translator_disasm = true; };
         void set_trans_single_step() { m_opts.translator_single_step = true; };
         void set_call_to_jump() { m_opts.call_to_jump = true; };
+        void set_skip_small_bb() { m_opts.skip_small_bb = true; };
         void set_stop_at(size_t v) { m_opts.stop_at = v; };
 
     private:

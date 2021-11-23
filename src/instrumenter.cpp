@@ -7,6 +7,7 @@
 
 void instrumenter::translate_all_bbs()
 {
+    SAY_INFO("Translating all basicblocks (could take a while)...\n");
     pehelper::section* code_sect = 0;
     size_t mod_base = 0;
     translator* trans = 0;
@@ -40,18 +41,31 @@ void instrumenter::translate_all_bbs()
         auto inst_addr = trans->instrument(addr, &inst_size, &orig_size);
         ASSERT(inst_addr);
         if (orig_size < 5) {
-            // This should not matter because all basic blocks should be
-            // instrumented and there should not be external links to small
-            // basicbocks, though exceptions are:
-            // * switch cases
-            // * .data references or any other sections (.text too)
-            // * CFG related call
             //SAY_ERROR("BB at %p has size %d (inst %d), we need at "
             //        "least 5 to make jump\n", 
-            //        addr, inst_size, orig_size);
-            if (orig_size < 2) 
-                SAY_WARN("BB at %p has size %d (inst %d), is 1 byte long\n",
-                        addr, inst_size, orig_size);
+            //        addr, orig_size, inst_size);
+
+            // NOTE: restoring the orig data, could be a solution
+            // if we decide skip bbs 
+            m_stats.bb_skipped++;
+            if (m_opts.skip_small_bb && 
+                    m_base_to[mod_base].shadow.size()
+               ) {
+                //SAY_INFO("skipping bb cov at %p...\n", addr);
+                auto shadow_sect = &m_base_to[mod_base].shadow;
+                auto offset = addr - code_sect->data.addr_remote();
+                //SAY_INFO("restoring orig: %p %p %x",
+                //        (void*)(sect->data.addr_loc() + offset),
+                //        (void*)(shadow_sect->addr_loc() + offset),
+                //        orig_size);
+                memcpy((void*)(code_sect->data.addr_loc() + offset),
+                        (void*)(shadow_sect->addr_loc() + offset),
+                        orig_size);
+            }
+            //if (orig_size < 2) 
+            //    SAY_WARN("BB at %p has size %d (inst %d), is 1 byte"
+            //            "long\n",
+            //            addr, inst_size, orig_size);
         }
         else {
             // Place jump
@@ -69,6 +83,8 @@ void instrumenter::translate_all_bbs()
             code_sect->data.size()
             );
     ASSERT(r);
+
+    SAY_INFO("All bbs translation done...\n");
 }
 
 bool instrumenter::should_translate(size_t addr) 
@@ -109,18 +125,25 @@ bool instrumenter::should_translate(size_t addr)
 
                         // NOTE: restoring the orig data, could be a solution
                         // if we decide skip bbs 
-                        //if (m_base_to[mod_base].shadow.size())) {
-                        //    SAY_INFO("skipping cov...\n");
-                        //    auto shadow_sect = &m_base_to[mod_base].shadow;
-                        //    auto offset = addr - sect->data.addr_remote();
-                        //    //SAY_INFO("restoring orig: %p %p %x",
-                        //    //        (void*)(sect->data.addr_loc() + offset),
-                        //    //        (void*)(shadow_sect->addr_loc() + offset),
-                        //    //        orig_size);
-                        //    memcpy((void*)(sect->data.addr_loc() + offset),
-                        //            (void*)(shadow_sect->addr_loc() + offset),
-                        //            orig_size);
-                        //}
+                        m_stats.bb_skipped++;
+                        if (m_opts.skip_small_bb && 
+                                m_base_to[mod_base].shadow.size()
+                                ) {
+                            //SAY_INFO("skipping bb cov at %p...\n", addr);
+                            auto shadow_sect = &m_base_to[mod_base].shadow;
+                            auto offset = addr - sect->data.addr_remote();
+                            //SAY_INFO("restoring orig: %p %p %x",
+                            //        (void*)(sect->data.addr_loc() + offset),
+                            //        (void*)(shadow_sect->addr_loc() + offset),
+                            //        orig_size);
+                            memcpy((void*)(sect->data.addr_loc() + offset),
+                                    (void*)(shadow_sect->addr_loc() + offset),
+                                    orig_size);
+                        }
+                        //if (orig_size < 2) 
+                        //    SAY_WARN("BB at %p has size %d (inst %d), is 1 byte"
+                        //            "long\n",
+                        //            addr, inst_size, orig_size);
                     }
                     else {
                         // Place jump
@@ -134,7 +157,6 @@ bool instrumenter::should_translate(size_t addr)
                                 );
                         ASSERT(r);
                     }
-
                 }
 
                 // Call commit on inst code
@@ -493,13 +515,15 @@ void instrumenter::print_stats()
             "%20d breakpoints\n"
             "%20d avs\n"
             "%20d translator_called\n"
-            "%20d rip_redirections\n",
+            "%20d rip_redirections\n"
+            "%20d bb_skipped\n",
             m_stats.dbg_callbaks,
             m_stats.exceptions,
             m_stats.breakpoints,
             m_stats.avs,
             m_stats.translator_called,
-            m_stats.rip_redirections
+            m_stats.rip_redirections,
+            m_stats.bb_skipped
             );
 }
 

@@ -18,7 +18,7 @@ int main(int argc, const char** argv)
         SAY_INFO_RAW("Usage:\n\t%s --cov <mod> --cmd <cmd line>\n", argv[0]);
         SAY_INFO_RAW("Instrumentation options:\n\t"
                 "--inst_bbs_file --inst_bbs_all --inst_int3_blind --fix_dd_refs"
-                " --call_to_jump --stop_at {num}\n");
+                " --call_to_jump --skip_small_bb --stop_at {num}\n");
         SAY_INFO_RAW("Debug options:\n\t"
                 "--disasm --show_flow --inst_debug --trans_debug --single_step"
                 "\n");
@@ -60,6 +60,12 @@ int main(int argc, const char** argv)
     if (is_call_to_jump) {
         SAY_INFO("call_to_jump = true\n");
         ins.set_call_to_jump();
+    }
+    auto is_skip_small_bb = GetBinaryOption("--skip_small_bb", 
+            argc, argv, false);
+    if (is_skip_small_bb) {
+        SAY_INFO("skip_small_bb = true\n");
+        ins.set_skip_small_bb();
     }
 
     auto is_fix_dd_refs = GetBinaryOption("--fix_dd_refs", argc, argv, true);
