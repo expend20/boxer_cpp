@@ -47,7 +47,7 @@ size_t dasm::opcode::rebuild_to_new_addr(
     xed_error_enum_t xed_error;
 
     if (!should_rebuild) {
-        // just copy the instructions, for speeding up the process
+        // just copy the instructions, this sould be faster
         //xed_error = xed_encode(
         //        &xedd, (unsigned char*)buf, buf_size, &size_new);
         memcpy(buf, (void*)opcode_data, size_orig);

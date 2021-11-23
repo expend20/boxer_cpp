@@ -56,7 +56,7 @@ int main(int argc, const char** argv)
         ins.set_bbs_inst_all();
     }
     auto is_call_to_jump = GetBinaryOption("--call_to_jump", 
-            argc, argv, false);
+            argc, argv, true);
     if (is_call_to_jump) {
         SAY_INFO("call_to_jump = true\n");
         ins.set_call_to_jump();
@@ -68,7 +68,8 @@ int main(int argc, const char** argv)
         ins.set_skip_small_bb();
     }
 
-    auto is_fix_dd_refs = GetBinaryOption("--fix_dd_refs", argc, argv, true);
+    // TODO: refactor code, only then, make it default
+    auto is_fix_dd_refs = GetBinaryOption("--fix_dd_refs", argc, argv, false);
     if (is_fix_dd_refs) {
         SAY_INFO("fix_dd_refs = true\n");
         ins.set_fix_dd_refs();

@@ -338,6 +338,7 @@ uint32_t translator::make_jump_from_orig_to_inst(
 
 // TODO: instrumentation stage (even all-at-once method) is slow: why? how to
 // improve it?
+//   * side note --fix_dd_refs=false speeds it up x9!
 size_t translator::instrument(size_t addr, 
         uint32_t* instrumented_size,
         uint32_t* original_size)

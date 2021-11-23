@@ -39,6 +39,7 @@ void instrumenter::translate_all_bbs()
         uint32_t inst_size = 0;
         uint32_t orig_size = 0;
         auto inst_addr = trans->instrument(addr, &inst_size, &orig_size);
+        m_stats.translator_called++;
         ASSERT(inst_addr);
         if (orig_size < 5) {
             //SAY_ERROR("BB at %p has size %d (inst %d), we need at "
@@ -425,7 +426,6 @@ void instrumenter::on_first_breakpoint()
                     mod_info.module_name.c_str()))
             instrument_module(addr, mod_info.module_name.c_str());
     }
-
 }
 
 DWORD instrumenter::handle_exception(EXCEPTION_DEBUG_INFO* dbg_info)
@@ -558,8 +558,8 @@ DWORD instrumenter::handle_debug_event(DEBUG_EVENT* dbg_event,
                         data.lpBaseOfImage,
                         mod_name.c_str());
             m_base_to[(size_t)data.lpBaseOfImage].module_name = mod_name;
-
             CloseHandle(data.hFile);
+            continue_status = DBG_CONTINUE;
             break;
         }
         case EXCEPTION_DEBUG_EVENT: {
@@ -581,7 +581,7 @@ DWORD instrumenter::handle_debug_event(DEBUG_EVENT* dbg_event,
                     should_instrument_module(mod_name.c_str())){
                 instrument_module((size_t)data.lpBaseOfDll, mod_name.c_str());
             }
-
+            continue_status = DBG_CONTINUE;
             break;
         }
         case UNLOAD_DLL_DEBUG_EVENT: {
@@ -590,6 +590,7 @@ DWORD instrumenter::handle_debug_event(DEBUG_EVENT* dbg_event,
                 SAY_INFO("Module unloaded %p\n", data.lpBaseOfDll);
             }
             break;
+            continue_status = DBG_CONTINUE;
         }
         case CREATE_THREAD_DEBUG_EVENT: {
             auto data = dbg_event->u.CreateThread;
@@ -600,12 +601,14 @@ DWORD instrumenter::handle_debug_event(DEBUG_EVENT* dbg_event,
                         data.lpStartAddress);
             }
             break;
+            continue_status = DBG_CONTINUE;
         }
         case EXIT_THREAD_DEBUG_EVENT: {
             auto data = dbg_event->u.ExitThread;
             if (m_opts.debug)
                 SAY_INFO("Exit thread: %x\n", data.dwExitCode);
             break;
+            continue_status = DBG_CONTINUE;
         }
         case EXIT_PROCESS_DEBUG_EVENT: {
             auto data = dbg_event->u.ExitProcess;
@@ -618,6 +621,7 @@ DWORD instrumenter::handle_debug_event(DEBUG_EVENT* dbg_event,
                 print_stats();
             }
             m_debugger->stop();
+            continue_status = DBG_CONTINUE;
             break;
         }
         case OUTPUT_DEBUG_STRING_EVENT: {
@@ -640,6 +644,7 @@ DWORD instrumenter::handle_debug_event(DEBUG_EVENT* dbg_event,
                             (void*)str.addr_loc());
                 }
             }
+            continue_status = DBG_CONTINUE;
             break;
         }
         default:
