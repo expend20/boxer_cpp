@@ -85,6 +85,7 @@ class instrumenter: public idebug_handler {
         instrumenter_stats m_stats = {0};
         debugger* m_debugger = NULL;
         DEBUG_EVENT* m_dbg_event = NULL;
+        bool m_first_breakpoint_reached = false;
 
         std::vector<std::string> m_modules_to_instrument;
         std::vector<pehelper::pe> m_modules;

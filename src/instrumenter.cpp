@@ -391,6 +391,20 @@ void instrumenter::instrument_module(size_t addr, const char* name)
         translate_all_bbs();
     }
 
+    { //FIXME:
+        // fill text with int3s based on bbs file
+        auto offsets = helper::files2Vector(m_opts.bbs_path);
+        uint32_t* ptr = (uint32_t*)&offsets[0][0];
+        for (size_t i = 0; i < offsets[0].size() / 4; i++) {
+            m_bbs.insert(ptr[i] + addr);
+            uint32_t sect_offset = ptr[i] - 
+                code_section->sect_head.VirtualAddress;
+            *(uint8_t*)(code_section->data.addr_loc() + sect_offset) = 0xcc;
+        }
+        SAY_INFO("%d offsets patched to int3\n", offsets[0].size());
+        code_section->data.commit();
+    }
+
 }
 
 bool instrumenter::should_instrument_module(const char* name)
@@ -485,6 +499,7 @@ DWORD instrumenter::handle_exception(EXCEPTION_DEBUG_INFO* dbg_info)
             if (m_stats.breakpoints == 1) {
                 // if it's first breakpoint, it's debugger's one
                 on_first_breakpoint();
+                m_first_breakpoint_reached = true;
                 continue_status = DBG_CONTINUE;
             } else {
                 if (//(m_opts.is_int3_inst || m_opts.is_bbs_inst) &&
@@ -577,7 +592,10 @@ DWORD instrumenter::handle_debug_event(DEBUG_EVENT* dbg_event,
                         mod_name.c_str());
             m_base_to[(size_t)data.lpBaseOfDll].module_name = mod_name;
 
-            if (!m_modules.size() && 
+            // we instrument module on loading only after first breakpoint
+            // was reached, otherwise we could interfere with system's dll
+            // loading mechanism (e.g. during kernelbase.dll instrumentation)
+            if (m_first_breakpoint_reached &&
                     should_instrument_module(mod_name.c_str())){
                 instrument_module((size_t)data.lpBaseOfDll, mod_name.c_str());
             }
