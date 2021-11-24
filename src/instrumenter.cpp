@@ -302,13 +302,24 @@ void instrumenter::instrument_module(size_t addr, const char* name)
             // fill text with int3s based on bbs file
             auto offsets = helper::files2Vector(m_opts.bbs_path);
             uint32_t* ptr = (uint32_t*)&offsets[0][0];
+            size_t offsets_not_in_code = 0;
             for (size_t i = 0; i < offsets[0].size() / 4; i++) {
-                m_bbs.insert(ptr[i] + addr);
                 uint32_t sect_offset = ptr[i] - 
                     code_section->sect_head.VirtualAddress;
+                if (sect_offset >= code_section->data.size()) {
+                    offsets_not_in_code++;
+                    continue;
+                }
+                m_bbs.insert(ptr[i] + addr);
                 *(uint8_t*)(code_section->data.addr_loc() + sect_offset) = 0xcc;
             }
-            SAY_INFO("%d offsets patched to int3\n", offsets[0].size());
+            SAY_INFO("%d offsets patched to int3\n", 
+                    offsets[0].size() - offsets_not_in_code);
+            if (offsets_not_in_code) {
+                SAY_WARN("%d offsets were poiting not in the code section, they"
+                        " are skipped\n", offsets_not_in_code);
+            }
+
         }
         else {
             // fill text with int3s
@@ -389,20 +400,6 @@ void instrumenter::instrument_module(size_t addr, const char* name)
     if (m_opts.is_bbs_inst_all &&
             m_bbs.size()) {
         translate_all_bbs();
-    }
-
-    { //FIXME:
-        // fill text with int3s based on bbs file
-        auto offsets = helper::files2Vector(m_opts.bbs_path);
-        uint32_t* ptr = (uint32_t*)&offsets[0][0];
-        for (size_t i = 0; i < offsets[0].size() / 4; i++) {
-            m_bbs.insert(ptr[i] + addr);
-            uint32_t sect_offset = ptr[i] - 
-                code_section->sect_head.VirtualAddress;
-            *(uint8_t*)(code_section->data.addr_loc() + sect_offset) = 0xcc;
-        }
-        SAY_INFO("%d offsets patched to int3\n", offsets[0].size());
-        code_section->data.commit();
     }
 
 }
