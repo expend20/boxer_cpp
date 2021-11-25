@@ -38,7 +38,7 @@ with open(filename, "wb") as fd:
         
         fd.write(blockoffs)
 
-print("Generated bbs: %s" % filename[:-4])
+print("Generated bbs: %s" % filename)
 
 # Exit only if we were invoked from the command line
 if len(ARGV) >= 4 and ARGV[1] == "cmdline":

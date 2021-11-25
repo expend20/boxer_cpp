@@ -50,7 +50,7 @@ int main(int argc, const char** argv)
         ins.set_int3_inst_blind();
     }
     auto is_inst_bbs_all = GetBinaryOption("--inst_bbs_all", 
-            argc, argv, false);
+            argc, argv, true);
     if (is_inst_bbs_all) {
         SAY_INFO("inst_bbs_all = true\n");
         ins.set_bbs_inst_all();
@@ -68,8 +68,7 @@ int main(int argc, const char** argv)
         ins.set_skip_small_bb();
     }
 
-    // TODO: refactor code, only then, make it default
-    auto is_fix_dd_refs = GetBinaryOption("--fix_dd_refs", argc, argv, false);
+    auto is_fix_dd_refs = GetBinaryOption("--fix_dd_refs", argc, argv, true);
     if (is_fix_dd_refs) {
         SAY_INFO("fix_dd_refs = true\n");
         ins.set_fix_dd_refs();

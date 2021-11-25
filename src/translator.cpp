@@ -2,14 +2,23 @@
 #include "Say.h"
 #include "dasm.h"
 
+#ifdef _WIN64
+
+#define XED_REG_PC XED_REG_RIP
+#define XED_REG_PC_INVALID XED_REG_RIP
+#define XED_REG_SP XED_REG_RSP
+
+#else
+
+#define XED_REG_PC XED_REG_EIP
+#define XED_REG_PC_INVALID XED_REG_INVALID
+#define XED_REG_SP XED_REG_ESP
+
+#endif
 
 void translator::make_dword_mov_cov_hit()
 {
-#ifdef _WIN64
     size_t inst_size = 10;
-#else
-    size_t inst_size = 6;
-#endif
 
     ASSERT(m_inst_offset + inst_size < m_inst_code->size());
     ASSERT(m_cov_offset + 4 < m_cov_buf->size());
@@ -17,12 +26,14 @@ void translator::make_dword_mov_cov_hit()
     size_t bits = 32;
     auto op = dasm::maker();
 
-    size_t disp = (m_cov_buf->addr_remote() + m_cov_offset)
-        - (m_inst_code->addr_remote() + m_inst_offset + inst_size);
+    size_t disp = (m_cov_buf->addr_remote() + m_cov_offset);
+#ifdef _WIN64
+    disp -= (m_inst_code->addr_remote() + m_inst_offset + inst_size);
+#endif
 
     xed_inst2(&op.enc_inst, op.dstate,
             XED_ICLASS_MOV, 0,
-            xed_mem_bd(XED_REG_RIP, xed_disp(disp, 32), 32),
+            xed_mem_bd(XED_REG_PC_INVALID, xed_disp(disp, 32), 32),
             xed_imm0(1, 32)
             );
 
@@ -126,25 +137,34 @@ uint32_t translator::translate_call_to_jump(
     // sub rsp, 8
     auto new_op = dasm::maker();
     xed_inst2(&new_op.enc_inst, new_op.dstate,
-            XED_ICLASS_SUB, 64,
-            xed_reg(XED_REG_RSP),
+            XED_ICLASS_SUB, sizeof(size_t) * 8,
+            xed_reg(XED_REG_SP),
+#ifdef _WIN64
             xed_imm0(8, 8)
+#else
+            xed_imm0(4, 8)
+#endif
             );
     auto new_size = new_op.make(buf, buf_size);
+#ifdef _WIN64
     ASSERT(new_size == 4);
+#else
+    ASSERT(new_size == 3);
+#endif
     inst_size += new_size;
 
     // mov     dword ptr [rsp],0C6BE108Ch
     new_op = dasm::maker();
     xed_inst2(&new_op.enc_inst, new_op.dstate,
             XED_ICLASS_MOV, 0,
-            xed_mem_b(XED_REG_RSP, 32),
+            xed_mem_b(XED_REG_SP, 32),
             xed_imm0(target_addr & 0xffffffff, 32)
             );
     new_size = new_op.make(buf + inst_size, buf_size - inst_size);
     ASSERT(new_size == 7);
     inst_size += new_size;
 
+#ifdef _WIN64
     // mov     dword ptr [rsp+4],7FF6h
     new_op = dasm::maker();
     xed_inst2(&new_op.enc_inst, new_op.dstate,
@@ -155,6 +175,7 @@ uint32_t translator::translate_call_to_jump(
     new_size = new_op.make(buf + inst_size, buf_size - inst_size);
     ASSERT(new_size == 8);
     inst_size += new_size;
+#endif
 
     // NOTE: the same code but looks redundant:
     // There is no `push <imm64>` or `mov [rsp], <imm64>` instruction, we can
@@ -255,18 +276,20 @@ uint32_t translator::translate_call_to_jump(
             //        inst_end);
 
             xed_inst1(&new_op.enc_inst, new_op.dstate,
-                    XED_ICLASS_JMP, 64,
+                    XED_ICLASS_JMP, sizeof(size_t) * 8,
                     xed_mem_bisd(op->reg_base, 
                         op->reg_index, 
                         op->scale,
                         xed_disp(target_disp - inst_end, 
                             op->mem_disp_width * 8), 
-                        64)
+                        sizeof(size_t) * 8)
                     );
             new_size = new_op.make(buf + inst_size, buf_size - inst_size);
             ASSERT(new_size == jmp_size);
             inst_size += new_size;
-
+#ifndef _WIN64
+            SAY_FATAL("translating call to jump [rel mem] %p\n", buf);
+#endif
         }
         else {
             // call qword ptr [rax]
@@ -275,18 +298,17 @@ uint32_t translator::translate_call_to_jump(
             //SAY_DEBUG("mem disp = %x, buf: %p\n", op->mem_disp_width, buf);
 
             xed_inst1(&new_op.enc_inst, new_op.dstate,
-                    XED_ICLASS_JMP, 64,
+                    XED_ICLASS_JMP, sizeof(size_t) * 8,
                     xed_mem_bisd(op->reg_base, 
                         op->reg_index, 
                         op->scale,
                         xed_disp(op->mem_disp, 
                             op->mem_disp_width * 8), 
-                        64)
+                        sizeof(size_t) * 8)
                     );
             new_size = new_op.make(buf + inst_size, buf_size - inst_size);
             ASSERT(new_size == jmp_size);
             inst_size += new_size;
-
         }
     }
     else if (target_op_name == XED_OPERAND_REG0) {
@@ -295,7 +317,7 @@ uint32_t translator::translate_call_to_jump(
         new_op = dasm::maker();
 
         xed_inst1(&new_op.enc_inst, new_op.dstate,
-                XED_ICLASS_JMP, 64,
+                XED_ICLASS_JMP, sizeof(size_t)*8,
                 xed_reg(op->reg0)
                 );
         new_size = new_op.make(buf + inst_size, buf_size - inst_size);
@@ -454,8 +476,6 @@ size_t translator::instrument(size_t addr,
         // continue the loop
         rip += op->size_orig;
     }
-    if (m_opts.fix_dd_refs)
-        fix_dd_refs();
 
     auto inst_size = m_inst_offset - inst_start_offset;
     if (instrumented_size) *instrumented_size = inst_size;

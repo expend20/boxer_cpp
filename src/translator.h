@@ -14,7 +14,6 @@
 #include <set>
 
 struct translator_opts {
-    bool fix_dd_refs = false;
     bool debug = false;
     bool disasm = false;
     bool single_step = false;
@@ -44,8 +43,8 @@ class translator {
         uint32_t translate_call_to_jump(
                 dasm::opcode* op, uint8_t* buf, size_t buf_size, 
                 size_t target_addr);
+        void fix_dd_refs();
 
-        void set_fix_dd_refs() { m_opts.fix_dd_refs = true; };
         void set_debug() { m_opts.debug = true; };
         void set_disasm() { m_opts.disasm = true; };
         void set_single_step() { m_opts.single_step = true; };
@@ -69,7 +68,5 @@ class translator {
         // Remote origin RIP to remote instrumented code
         std::map<size_t, size_t> m_remote_orig_to_inst_bb;
         std::set<size_t> m_remote_dd_refs;
-
-        void fix_dd_refs();
 
 };

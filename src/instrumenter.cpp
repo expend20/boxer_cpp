@@ -55,8 +55,8 @@ void instrumenter::translate_all_bbs()
                 //SAY_INFO("skipping bb cov at %p...\n", addr);
                 auto shadow_sect = &m_base_to[mod_base].shadow;
                 auto offset = addr - code_sect->data.addr_remote();
-                //SAY_INFO("restoring orig: %p %p %x",
-                //        (void*)(sect->data.addr_loc() + offset),
+                //SAY_INFO("restoring orig: %p %p %x\n",
+                //        (void*)(code_sect->data.addr_loc() + offset),
                 //        (void*)(shadow_sect->addr_loc() + offset),
                 //        orig_size);
                 memcpy((void*)(code_sect->data.addr_loc() + offset),
@@ -74,6 +74,8 @@ void instrumenter::translate_all_bbs()
                     addr, inst_addr);
         }
     }
+    if (m_opts.fix_dd_refs) 
+        trans->fix_dd_refs();
 
     // Call commit on inst code
     code_sect->data.commit();
@@ -115,6 +117,8 @@ bool instrumenter::should_translate(size_t addr)
                 uint32_t orig_size = 0;
                 inst_addr = trans->instrument(addr, &inst_size, &orig_size);
                 ASSERT(inst_addr);
+                if (m_opts.fix_dd_refs) 
+                    trans->fix_dd_refs();
 
                 if (m_opts.is_bbs_inst ||
                         m_opts.is_int3_inst_blind) {
@@ -183,17 +187,37 @@ bool instrumenter::should_translate(size_t addr)
                 ctx.ContextFlags = CONTEXT_ALL;
                 auto r = GetThreadContext(hThread, &ctx);
                 ASSERT(r);
+
+#ifdef _WIN64
                 SAY_INFO("Redirecting on exception %p -> %p; "
                         "rax/rcx/rdx/r8/r9/rsp/rbp/rsi/rdi "
                         "%p/%p/%p/%p/%p/%p/%p/%p/%p\n", 
                         addr,  inst_addr,
                         ctx.Rax, ctx.Rax, ctx.Rcx, ctx.Rdx, ctx.R8, ctx.R9,
                         ctx.Rsp, ctx.Rbp, ctx.Rsi, ctx.Rdi);
+
+#else 
+                SAY_INFO("Redirecting on exception %p -> %p; "
+                        "eax/ecx/edx/esp/ebp/esi/edi "
+                        "%p/%p/%p/%p/%p/%p/%p/%p/%p\n", 
+                        addr,  inst_addr,
+                        ctx.Eax, ctx.Eax, ctx.Ecx, ctx.Edx,
+                        ctx.Esp, ctx.Ebp, ctx.Esi, ctx.Edi);
+#endif
+
                 if (m_opts.is_int3_inst_blind || m_opts.is_bbs_inst) {
+#ifdef _WIN64
                     ASSERT(addr == ctx.Rip - 1);
+#else
+                    ASSERT(addr == ctx.Eip - 1);
+#endif
                 }
                 else {
+#ifdef _WIN64
                     ASSERT(addr == ctx.Rip);
+#else
+                    ASSERT(addr == ctx.Eip);
+#endif
                 }
             }
 
@@ -247,9 +271,9 @@ void instrumenter::instrument_module(size_t addr, const char* name)
         inst_type = "int3";
     }
 
-    if (m_opts.debug) {
+    //if (m_opts.debug) {
         SAY_INFO("Instrumenting %s %p %s...\n", inst_type, addr, name);
-    }
+    //}
 
     for (auto &m: m_modules) {
         if (m.get_remote_addr() == addr) {
@@ -388,9 +412,6 @@ void instrumenter::instrument_module(size_t addr, const char* name)
 
     if (m_opts.translator_disasm)
         trans.set_disasm();
-
-    if (m_opts.fix_dd_refs && !m_opts.translator_single_step)
-        trans.set_fix_dd_refs();
 
     if (m_opts.translator_single_step)
         trans.set_single_step();
