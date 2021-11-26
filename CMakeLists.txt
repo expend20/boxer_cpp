@@ -12,7 +12,7 @@ include_directories(${CMAKE_CURRENT_BINARY_DIR}/third_party/obj/wkit/include)
 link_directories(${CMAKE_CURRENT_BINARY_DIR}/third_party/obj/wkit/lib)
 
 add_library(boxer_lib
-    src/Say.cpp
+    src/say.cpp
     src/args.cpp
     src/common.cpp
     src/tools.cpp
@@ -29,8 +29,17 @@ add_executable(boxer
     src/main.cpp
     src/debugger.cpp
     )
-
 target_link_libraries(boxer
+    boxer_lib
+    "dbghelp.lib"
+    "xed.lib"
+    )
+
+add_executable(boxer_veh
+    src/main_veh.cpp
+    src/veh.cpp
+    )
+target_link_libraries(boxer_veh
     boxer_lib
     "dbghelp.lib"
     "xed.lib"

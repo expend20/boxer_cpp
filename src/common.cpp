@@ -1,5 +1,5 @@
 #include "common.h"
-#include "Say.h"
+#include "say.h"
 
 #include <stdio.h>
 #include <stdlib.h>

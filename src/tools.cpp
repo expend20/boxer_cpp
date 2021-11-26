@@ -8,7 +8,7 @@
 
 namespace tools {
 
-    void write_minidump(const char* path, HANDLE proc, DWORD pid) 
+    void write_minidump(const char* path, HANDLE proc) 
     {
         auto hfile = CreateFileA(path,
                GENERIC_READ | GENERIC_WRITE,
@@ -18,8 +18,9 @@ namespace tools {
                0,
                0);
         ASSERT(hfile != INVALID_HANDLE_VALUE);
+        
         auto r = MiniDumpWriteDump(proc, 
-                pid,
+                GetProcessId(proc),
                 hfile,
                 MINIDUMP_TYPE::MiniDumpWithFullMemory,
                 NULL,
@@ -28,45 +29,6 @@ namespace tools {
         ASSERT(r);
         CloseHandle(hfile);
     }
-
-    void write_minidump(const char* path, 
-            PROCESS_INFORMATION* pi,
-            EXCEPTION_RECORD* ex_rec) 
-    {
-        CONTEXT ctx = {0};
-        ctx.ContextFlags = CONTEXT_ALL;
-        auto b = GetThreadContext(pi->hThread, &ctx);
-        //ASSERT(b);
-
-        auto hfile = CreateFileA(path,
-               GENERIC_READ | GENERIC_WRITE,
-               FILE_SHARE_READ | FILE_SHARE_WRITE,
-               NULL,
-               CREATE_ALWAYS,
-               0,
-               0);
-        ASSERT(hfile != INVALID_HANDLE_VALUE);
-
-        EXCEPTION_POINTERS ex_poi;
-        ex_poi.ExceptionRecord = ex_rec;
-        ex_poi.ContextRecord = &ctx;
-
-        MINIDUMP_EXCEPTION_INFORMATION ex_info;
-        ex_info.ExceptionPointers = &ex_poi;
-        ex_info.ThreadId = pi->dwThreadId;
-        ex_info.ClientPointers = true;
-        auto r = MiniDumpWriteDump(pi->hProcess, 
-                pi->dwProcessId,
-                hfile,
-                MINIDUMP_TYPE::MiniDumpWithFullMemory,
-                NULL,//&ex_info,
-                NULL,
-                NULL);
-        ASSERT(r);
-        CloseHandle(hfile);
-
-    }
-
 
     size_t alloc_after_pe_image(
             HANDLE proc,

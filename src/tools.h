@@ -16,13 +16,10 @@ namespace tools {
             size_t data_size,
             DWORD premissions);
 
-    void write_minidump(const char* path, HANDLE proc, DWORD pid);
     void update_thread_rip(HANDLE thread, size_t rip);
     void update_thread_set_trap(HANDLE thread);
 
-    void write_minidump(const char* path, 
-            PROCESS_INFORMATION* pi,
-            EXCEPTION_RECORD* ex_rec);
+    void write_minidump(const char* path, HANDLE proc);
 }
 
 #endif // TOOLS_H

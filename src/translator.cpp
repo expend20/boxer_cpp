@@ -1,5 +1,5 @@
 #include "translator.h"
-#include "Say.h"
+#include "say.h"
 #include "dasm.h"
 
 #ifdef _WIN64
@@ -101,6 +101,8 @@ void translator::make_jump_to_orig_or_inst(size_t target_addr)
 }
 
 void translator::fix_dd_refs() {
+
+    std::set<size_t> new_remote_dd_refs;
     for (auto &remote_ptr: m_remote_dd_refs) {
         auto offset = remote_ptr - m_inst_code->addr_remote();
         auto loc_ptr = m_inst_code->addr_loc() + offset;
@@ -114,9 +116,12 @@ void translator::fix_dd_refs() {
                         next_remote, tgt_ref, inst_addr);
             uint32_t new_dd = inst_addr - next_remote;
             *(uint32_t*)loc_ptr = new_dd;
-            m_remote_dd_refs.erase(remote_ptr);
+        }
+        else {
+            new_remote_dd_refs.insert(remote_ptr);
         }
     }
+    m_remote_dd_refs = new_remote_dd_refs;
 }
 
 uint32_t translator::translate_call_to_jump(
@@ -358,9 +363,6 @@ uint32_t translator::make_jump_from_orig_to_inst(
 // duplication. We also do not follow any references in advance. 
 // This strategy leads to the instrumentation of only code wich is hit.
 
-// TODO: instrumentation stage (even all-at-once method) is slow: why? how to
-// improve it?
-//   * side note --fix_dd_refs=false speeds it up x9!
 size_t translator::instrument(size_t addr, 
         uint32_t* instrumented_size,
         uint32_t* original_size)

@@ -2,39 +2,38 @@
 #include "common.h"
 #include "pe.h"
 
-#include "Say.h"
+#include "say.h"
 #include "tools.h"
+
+HANDLE instrumenter::get_target_process()
+{
+    if (m_debugger) {
+        return m_debugger->get_proc_info()->hProcess;
+    } else {
+        return GetCurrentProcess();
+    }
+}
+
+size_t instrumenter::find_module_by_text_address(size_t addr)
+{
+    for (auto &[mod_base, mod_data]: m_base_to) {
+        auto start = mod_data.code_sect->data.addr_remote();
+        auto end = start + mod_data.code_sect->data.size();
+        if (addr >= start && addr < end) {
+            return mod_base;
+        }
+    }
+    return 0;
+}
 
 void instrumenter::translate_all_bbs()
 {
     SAY_INFO("Translating all basicblocks (could take a while)...\n");
-    pehelper::section* code_sect = 0;
-    size_t mod_base = 0;
-    translator* trans = 0;
+    size_t mod_base = find_module_by_text_address(*m_bbs.begin());
+    ASSERT(mod_base);
+    pehelper::section* code_sect = m_base_to[mod_base].code_sect;
+    translator* trans = &m_base_to[mod_base].translator;
     for (auto &addr: m_bbs) {
-
-        // find and cache code section
-        if (!code_sect) {
-            for (auto &sect: m_sections_patched) {
-                auto start = sect->data.addr_remote();
-                auto end = start + sect->data.size();
-                if (addr >= start && addr < end) {
-                    code_sect = sect;
-                }
-            }
-        }
-        else {
-            ASSERT(addr >= code_sect->data.addr_remote() &&
-                    addr < (code_sect->data.addr_remote() +
-                        code_sect->data.size()));
-        }
-
-        if (!mod_base) {
-            mod_base = code_sect->mod_base;
-            ASSERT(mod_base);
-            trans = &m_base_to[mod_base].translator;
-            ASSERT(trans);
-        }
 
         uint32_t inst_size = 0;
         uint32_t orig_size = 0;
@@ -81,7 +80,7 @@ void instrumenter::translate_all_bbs()
     code_sect->data.commit();
     m_base_to[mod_base].inst.commit();
     auto r = FlushInstructionCache(
-            m_debugger->get_proc_info()->hProcess,
+            this->get_target_process(),
             (void*)code_sect->data.addr_remote(), 
             code_sect->data.size()
             );
@@ -90,176 +89,159 @@ void instrumenter::translate_all_bbs()
     SAY_INFO("All bbs translation done...\n");
 }
 
+void instrumenter::redirect_execution(size_t addr, size_t inst_addr) 
+{
+    if (m_opts.show_flow) {
+#ifdef _WIN64
+        SAY_INFO("Redirecting on exception %p -> %p;\n", addr,  inst_addr);
+#else 
+        SAY_INFO("Redirecting on exception %p -> %p;\n", addr,  inst_addr);
+#endif
+    }
+
+    if (m_debugger) {
+
+        auto hThread = m_tid_to_handle[m_dbg_event->dwThreadId];
+        if (!hThread) {
+            hThread = OpenThread(THREAD_ALL_ACCESS, FALSE, 
+                    m_dbg_event->dwThreadId);
+            ASSERT(hThread);
+            m_tid_to_handle[m_dbg_event->dwThreadId] = hThread;
+        }
+        if (m_opts.debug || m_opts.show_flow) 
+        {
+            CONTEXT ctx;
+            ctx.ContextFlags = CONTEXT_ALL;
+            auto r = GetThreadContext(hThread, &ctx);
+            ASSERT(r);
+
+            if (m_opts.is_int3_inst_blind || m_opts.is_bbs_inst) {
+#ifdef _WIN64
+                ASSERT(addr == ctx.Rip - 1);
+#else
+                ASSERT(addr == ctx.Eip - 1);
+#endif
+            }
+            else {
+#ifdef _WIN64
+                ASSERT(addr == ctx.Rip);
+#else
+                ASSERT(addr == ctx.Eip);
+#endif
+            }
+        }
+
+        tools::update_thread_rip(hThread, inst_addr);
+    }
+    else {
+        if (m_opts.is_int3_inst_blind || m_opts.is_bbs_inst) {
+#ifdef _WIN64
+            ASSERT(addr == m_ctx->Rip - 1);
+#else
+            ASSERT(addr == m_ctx->Eip - 1);
+#endif
+        }
+        else {
+#ifdef _WIN64
+            ASSERT(addr == m_ctx->Rip);
+#else
+            ASSERT(addr == m_ctx->Eip);
+#endif
+        }
+#ifdef _WIN64
+        m_ctx->Rip = inst_addr;
+#else
+        m_ctx->Eip = inst_addr;
+#endif
+    }
+
+}
+
 bool instrumenter::should_translate(size_t addr) 
 {
-    for (auto &sect: m_sections_patched) {
-        auto start = sect->data.addr_remote();
-        auto end = start + sect->data.size();
-        if (addr >= start && addr < end) {
+    auto mod_base = find_module_by_text_address(addr);
+    if (!mod_base) return false;
+    auto code_sect = m_base_to[mod_base].code_sect;
+    ASSERT(code_sect);
 
-            m_stats.rip_redirections++;
-            if (m_opts.debug) 
-                SAY_DEBUG("That's we patched the code %p\n", addr);
-            // That's we've patched the code, let's check if it's already 
-            // instrumented
-            size_t mod_base = sect->mod_base;
+    m_stats.rip_redirections++;
+    if (m_opts.debug) 
+        SAY_DEBUG("That's we patched the code %p\n", addr);
+    // That's we've patched the code, let's check if it's already 
+    // instrumented
 
-            auto trans = &m_base_to[mod_base].translator;
-            ASSERT(trans);
+    auto trans = &m_base_to[mod_base].translator;
+    ASSERT(trans);
 
-            size_t inst_addr = trans->remote_orig_to_inst_bb(addr);
-            if (!inst_addr) { 
-                m_stats.translator_called++;
+    size_t inst_addr = trans->remote_orig_to_inst_bb(addr);
+    if (!inst_addr) { 
+        m_stats.translator_called++;
 
-                if (m_opts.debug) 
-                    SAY_DEBUG("Address not found, instrumenting...\n");
-                uint32_t inst_size = 0;
-                uint32_t orig_size = 0;
-                inst_addr = trans->instrument(addr, &inst_size, &orig_size);
-                ASSERT(inst_addr);
-                if (m_opts.fix_dd_refs) 
-                    trans->fix_dd_refs();
+        if (m_opts.debug) 
+            SAY_DEBUG("Address not found, instrumenting...\n");
+        uint32_t inst_size = 0;
+        uint32_t orig_size = 0;
+        inst_addr = trans->instrument(addr, &inst_size, &orig_size);
+        ASSERT(inst_addr);
+        if (m_opts.fix_dd_refs) 
+            trans->fix_dd_refs();
 
-                if (m_opts.is_bbs_inst ||
-                        m_opts.is_int3_inst_blind) {
+        if (m_opts.is_bbs_inst ||
+                m_opts.is_int3_inst_blind) {
 
-                    if (orig_size < 5) {
-                        //SAY_ERROR("BB at %p has size %d (inst %d), we need at "
-                        //        "least 5 to make jump\n", 
-                        //        addr, orig_size, inst_size);
+            if (orig_size < 5) {
+                //SAY_ERROR("BB at %p has size %d (inst %d), we need at "
+                //        "least 5 to make jump\n", 
+                //        addr, orig_size, inst_size);
 
-                        // NOTE: restoring the orig data, could be a solution
-                        // if we decide skip bbs 
-                        m_stats.bb_skipped++;
-                        if (m_opts.skip_small_bb && 
-                                m_base_to[mod_base].shadow.size()
-                                ) {
-                            //SAY_INFO("skipping bb cov at %p...\n", addr);
-                            auto shadow_sect = &m_base_to[mod_base].shadow;
-                            auto offset = addr - sect->data.addr_remote();
-                            //SAY_INFO("restoring orig: %p %p %x",
-                            //        (void*)(sect->data.addr_loc() + offset),
-                            //        (void*)(shadow_sect->addr_loc() + offset),
-                            //        orig_size);
-                            memcpy((void*)(sect->data.addr_loc() + offset),
-                                    (void*)(shadow_sect->addr_loc() + offset),
-                                    orig_size);
-                        }
-                        //if (orig_size < 2) 
-                        //    SAY_WARN("BB at %p has size %d (inst %d), is 1 byte"
-                        //            "long\n",
-                        //            addr, inst_size, orig_size);
-                    }
-                    else {
-                        // Place jump
-                        auto jump_size = trans->make_jump_from_orig_to_inst(
-                                addr, inst_addr);
-                        // Commit on orig code
-                        sect->data.commit();
-                        auto r = FlushInstructionCache(
-                                m_debugger->get_proc_info()->hProcess,
-                                (void*)addr, jump_size
-                                );
-                        ASSERT(r);
-                    }
+                // NOTE: restoring the orig data, could be a solution
+                // if we decide skip bbs 
+                m_stats.bb_skipped++;
+                if (m_opts.skip_small_bb && 
+                        m_base_to[mod_base].shadow.size()
+                   ) {
+                    //SAY_INFO("skipping bb cov at %p...\n", addr);
+                    auto shadow_sect = &m_base_to[mod_base].shadow;
+                    auto offset = addr - code_sect->data.addr_remote();
+                    //SAY_INFO("restoring orig: %p %p %x",
+                    //        (void*)(sect->data.addr_loc() + offset),
+                    //        (void*)(shadow_sect->addr_loc() + offset),
+                    //        orig_size);
+                    memcpy((void*)(code_sect->data.addr_loc() + offset),
+                            (void*)(shadow_sect->addr_loc() + offset),
+                            orig_size);
                 }
-
-                // Call commit on inst code
-                m_base_to[mod_base].inst.commit();
-
+                //if (orig_size < 2) 
+                //    SAY_WARN("BB at %p has size %d (inst %d), is 1 byte"
+                //            "long\n",
+                //            addr, inst_size, orig_size);
+            }
+            else {
+                // Place jump
+                auto jump_size = trans->make_jump_from_orig_to_inst(
+                        addr, inst_addr);
+                // Commit on orig code
+                code_sect->data.commit();
                 auto r = FlushInstructionCache(
-                        m_debugger->get_proc_info()->hProcess,
-                        (void*)inst_addr, inst_size
+                        get_target_process(),
+                        (void*)addr, jump_size
                         );
                 ASSERT(r);
             }
-
-            auto hThread = m_tid_to_handle[m_dbg_event->dwThreadId];
-            if (!hThread) {
-                hThread = OpenThread(THREAD_ALL_ACCESS, FALSE, 
-                        m_dbg_event->dwThreadId);
-                ASSERT(hThread);
-                m_tid_to_handle[m_dbg_event->dwThreadId] = hThread;
-            }
-            if (m_opts.debug || m_opts.show_flow) 
-            {
-                CONTEXT ctx;
-                ctx.ContextFlags = CONTEXT_ALL;
-                auto r = GetThreadContext(hThread, &ctx);
-                ASSERT(r);
-
-#ifdef _WIN64
-                SAY_INFO("Redirecting on exception %p -> %p; "
-                        "rax/rcx/rdx/r8/r9/rsp/rbp/rsi/rdi "
-                        "%p/%p/%p/%p/%p/%p/%p/%p/%p\n", 
-                        addr,  inst_addr,
-                        ctx.Rax, ctx.Rax, ctx.Rcx, ctx.Rdx, ctx.R8, ctx.R9,
-                        ctx.Rsp, ctx.Rbp, ctx.Rsi, ctx.Rdi);
-
-#else 
-                SAY_INFO("Redirecting on exception %p -> %p; "
-                        "eax/ecx/edx/esp/ebp/esi/edi "
-                        "%p/%p/%p/%p/%p/%p/%p/%p/%p\n", 
-                        addr,  inst_addr,
-                        ctx.Eax, ctx.Eax, ctx.Ecx, ctx.Edx,
-                        ctx.Esp, ctx.Ebp, ctx.Esi, ctx.Edi);
-#endif
-
-                if (m_opts.is_int3_inst_blind || m_opts.is_bbs_inst) {
-#ifdef _WIN64
-                    ASSERT(addr == ctx.Rip - 1);
-#else
-                    ASSERT(addr == ctx.Eip - 1);
-#endif
-                }
-                else {
-#ifdef _WIN64
-                    ASSERT(addr == ctx.Rip);
-#else
-                    ASSERT(addr == ctx.Eip);
-#endif
-                }
-            }
-
-            tools::update_thread_rip(hThread, inst_addr);
-
-            return true;
         }
+
+        // Call commit on inst code
+        m_base_to[mod_base].inst.commit();
+
+        auto r = FlushInstructionCache(
+                get_target_process(),
+                (void*)inst_addr, inst_size
+                );
+        ASSERT(r);
     }
-    return false;
-}
 
-void instrumenter::patch_references_to_section(pehelper::pe* module, 
-        pehelper::section* target_section, 
-        size_t shadow_sect_remote_start){
-    for (auto i = 0; i < module->get_section_count(); i++) {
-        auto sect = module->get_section_by_idx(i);
-
-        size_t patches_in_sect = 0;
-        // due to VirturtualSize this restriction is relaxed
-        //ASSERT(sect->data.size() % sizeof(size_t) == 0);
-        size_t idx_max = sect->data.size() / sizeof(size_t);
-        size_t* data = (size_t*)sect->data.addr_loc();
-        size_t remote_start = target_section->data.addr_remote();
-        size_t remote_end = remote_start + target_section->data.size();
-        for (size_t idx = 0; idx < idx_max; idx++) {
-            size_t dd = data[idx];
-            if (dd >= remote_start && dd < remote_end) {
-                patches_in_sect++;
-                size_t offset = dd - remote_start;
-                size_t new_dd = shadow_sect_remote_start + offset;
-                data[idx] = new_dd; 
-                SAY_DEBUG("dq fixed %p[%p] = %p", 
-                        remote_start + idx * sizeof(size_t),
-                        dd,
-                        new_dd);
-            }
-        }
-        if (patches_in_sect) {
-            sect->data.commit();
-            SAY_DEBUG("\n");
-        }
-    }
+    redirect_execution(addr, inst_addr);
+    return true;
 }
 
 void instrumenter::instrument_module(size_t addr, const char* name) 
@@ -275,17 +257,13 @@ void instrumenter::instrument_module(size_t addr, const char* name)
         SAY_INFO("Instrumenting %s %p %s...\n", inst_type, addr, name);
     //}
 
-    for (auto &m: m_modules) {
-        if (m.get_remote_addr() == addr) {
-            SAY_FATAL("Attempt to double instrument module at %p, %s\n",
-                    addr, name);
-        }
-    }
+    if (m_base_to[addr].code_sect) 
+        SAY_FATAL("Attempt to double instrument module at %p, %s\n",
+                addr, name);
 
-    auto hproc = m_debugger->get_proc_info()->hProcess;
-    auto obj = pehelper::pe(hproc, addr);
-    m_modules.push_back(obj);
-    auto pe = &m_modules[m_modules.size() - 1];
+    auto hproc = this->get_target_process();
+    m_base_to[addr].pe = pehelper::pe(hproc, addr);
+    auto pe = &m_base_to[addr].pe;
 
     auto opt_head = pe->get_nt_headers()->OptionalHeader;
     size_t img_size = opt_head.SizeOfImage;
@@ -294,10 +272,10 @@ void instrumenter::instrument_module(size_t addr, const char* name)
     auto code_section = pe->get_section(".text");
     if (!code_section) code_section = pe->get_section(".code");
     ASSERT(code_section);
+    m_base_to[addr].code_sect = code_section;
 
     mem_tool* shadow_code_data = 0;
 
-    m_sections_patched.push_back(code_section);
     if (m_opts.is_bbs_inst || m_opts.is_int3_inst_blind) {
         // create shadow memory
         size_t shadow_code_size = code_section->data.size();
@@ -346,7 +324,7 @@ void instrumenter::instrument_module(size_t addr, const char* name)
 
         }
         else {
-            // fill text with int3s
+            // fill all the text section with int3s
             memset((void*)code_section->data.addr_loc(), 
                     0xcc,
                     code_section->data.size());
@@ -389,7 +367,8 @@ void instrumenter::instrument_module(size_t addr, const char* name)
             meta_buf_size,
             PAGE_READWRITE);
     ASSERT(meta_buf);
-    m_base_to[addr].cov = mem_cov;
+    auto mem_meta = mem_tool(hproc, meta_buf, meta_buf_size);
+    m_base_to[addr].metadata = mem_meta;
 
     // check 2gb limit, for relative data access
     ASSERT((meta_buf + meta_buf_size) - addr < 0x7fffffff);
@@ -442,20 +421,21 @@ void instrumenter::add_module(const char* name)
     m_modules_to_instrument.push_back(std::string(name));
 }
 
+void instrumenter::explicit_instrument_module(size_t addr, const char* name) {
+
+    instrument_module(addr, name);
+
+}
+
 void instrumenter::on_first_breakpoint()
 {
     if (m_opts.debug) 
         SAY_INFO("on_first_breakpoint() reached\n");
+
     for (auto &[addr, mod_info]: m_base_to) {
-        bool is_instrumented = false;
-        for (auto &m: m_modules) {
-            if (m.get_remote_addr() == addr) {
-                is_instrumented = true;
-                break;
-            }
-        }
-        if (!is_instrumented && should_instrument_module(
-                    mod_info.module_name.c_str()))
+        // Already instrumented?
+        if (!mod_info.code_sect &&
+                should_instrument_module(mod_info.module_name.c_str()))
             instrument_module(addr, mod_info.module_name.c_str());
     }
 }
@@ -489,13 +469,7 @@ DWORD instrumenter::handle_exception(EXCEPTION_DEBUG_INFO* dbg_info)
     if (!dbg_info->dwFirstChance) {
         SAY_ERROR("Second chance exception caught, exiting...\n");
 
-        {
-            auto pi = m_debugger->get_proc_info();
-            tools::write_minidump("second_chance.dmp",
-                    pi,
-                    &dbg_info->ExceptionRecord);
-        }
-
+        tools::write_minidump("second_chance.dmp", get_target_process());
         print_stats();
         exit(0);
     }
@@ -559,6 +533,22 @@ void instrumenter::print_stats()
             m_stats.bb_skipped
             );
 }
+DWORD instrumenter::handle_veh(_EXCEPTION_POINTERS* ex_info) {
+    m_ctx = ex_info->ContextRecord;
+    auto res = EXCEPTION_CONTINUE_SEARCH;
+
+#ifdef _WIN64
+    size_t pc = m_ctx->Rip;
+#else
+    size_t pc = m_ctx->Eip;
+#endif
+    if (should_translate(pc)) {
+        res = EXCEPTION_CONTINUE_EXECUTION;
+    }
+
+    m_ctx = 0;
+    return res;
+}
 
 DWORD instrumenter::handle_debug_event(DEBUG_EVENT* dbg_event,
         debugger* debugger)
@@ -571,14 +561,14 @@ DWORD instrumenter::handle_debug_event(DEBUG_EVENT* dbg_event,
     if (m_opts.stop_at &&
             m_stats.dbg_callbaks >= m_opts.stop_at) {
         SAY_INFO("Stopping at iteration # %d\n", m_stats.dbg_callbaks);
-        auto pi = m_debugger->get_proc_info();
-        tools::write_minidump("stop_at.dmp", pi, NULL);
+        tools::write_minidump("stop_at.dmp", get_target_process());
         print_stats();
         m_debugger->stop();
     }
 
     m_debugger = debugger;
     m_dbg_event = dbg_event;
+
     m_stats.dbg_callbaks++;
     auto continue_status = DBG_EXCEPTION_NOT_HANDLED;
 
@@ -610,7 +600,7 @@ DWORD instrumenter::handle_debug_event(DEBUG_EVENT* dbg_event,
                         mod_name.c_str());
             m_base_to[(size_t)data.lpBaseOfDll].module_name = mod_name;
 
-            // we instrument module on loading only after first breakpoint
+            // We instrument module on loading only after first breakpoint
             // was reached, otherwise we could interfere with system's dll
             // loading mechanism (e.g. during kernelbase.dll instrumentation)
             if (m_first_breakpoint_reached &&
@@ -652,11 +642,11 @@ DWORD instrumenter::handle_debug_event(DEBUG_EVENT* dbg_event,
                 SAY_INFO("Exiting process with %d\n", data.dwExitCode);
             // Creating dump on exitprocess
             {
-                auto pi = m_debugger->get_proc_info();
-                tools::write_minidump("exit_process.dmp", pi, NULL);
+                auto pi = debugger->get_proc_info();
+                tools::write_minidump("exit_process.dmp", get_target_process());
                 print_stats();
             }
-            m_debugger->stop();
+            debugger->stop();
             continue_status = DBG_CONTINUE;
             break;
         }
@@ -667,7 +657,7 @@ DWORD instrumenter::handle_debug_event(DEBUG_EVENT* dbg_event,
                         data.fUnicode,
                         data.nDebugStringLength,
                         data.lpDebugStringData);
-                auto str = mem_tool(m_debugger->get_proc_info()->hProcess,
+                auto str = mem_tool(debugger->get_proc_info()->hProcess,
                         (size_t)data.lpDebugStringData,
                         data.fUnicode ? data.nDebugStringLength * 2:
                         data.nDebugStringLength);
@@ -689,3 +679,43 @@ DWORD instrumenter::handle_debug_event(DEBUG_EVENT* dbg_event,
     }
     return continue_status;
 };
+
+void instrumenter::uninstrument(size_t addr)
+{
+    auto it = m_base_to.find(addr);
+    if (it == m_base_to.end()) return;
+
+    auto proc = get_target_process();
+    auto data = it->second;
+    SAY_INFO("Uninstrumenting module %p\n", addr, data.module_name.c_str());
+
+    auto r = VirtualFreeEx(proc, (void*)data.inst.addr_remote(), 0, 
+            MEM_RELEASE);
+    ASSERT(r);
+    if (data.shadow.size()) {
+        // restore code section
+        memcpy((void*)data.shadow.addr_loc(),
+                (void*)data.code_sect->data.addr_loc(), 
+                data.shadow.size());
+        data.code_sect->data.commit();
+        
+        r = VirtualFreeEx(proc, (void*)data.shadow.addr_remote(), 0, 
+                MEM_RELEASE);
+        ASSERT(r);
+    }
+    r = VirtualFreeEx(proc, (void*)data.cov.addr_remote(), 0, MEM_RELEASE);
+    r = VirtualFreeEx(proc, (void*)data.metadata.addr_remote(), 0, 
+            MEM_RELEASE);
+    ASSERT(r);
+
+    m_base_to.erase(it);
+}
+
+instrumenter::instrumenter() {
+}
+
+instrumenter::~instrumenter() {
+    for (auto &[mod_base, data]: m_base_to) {
+        uninstrument(mod_base);
+    }
+}

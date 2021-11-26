@@ -8,34 +8,51 @@
 
 #include "instrumenter.h"
 
+typedef void (*t_fuzz_proc)(const char* data, size_t len);
+
+class test_acc_test {
+
+    private:
+        HMODULE lib = 0;
+        t_fuzz_proc fuzz_proc = 0;
+
+    public:
+        test_acc_test(const char* lib_path, const char* proc_name) {
+
+            lib = LoadLibrary(lib_path);
+            if (!lib) 
+                SAY_FATAL("Can't load library %s\n", lib_path);
+
+            fuzz_proc = (t_fuzz_proc)GetProcAddress(lib, proc_name);
+            if (!fuzz_proc) 
+                SAY_FATAL("Can't find proc %s in %p mod\n", proc_name, lib);
+
+        }
+
+        void call_fuzz_proc(const char* data, size_t len) {
+            ASSERT(fuzz_proc);
+            fuzz_proc(data, len);
+        }
+
+        size_t get_module() { return (size_t)lib; }
+
+        ~test_acc_test() {
+            if (lib) FreeLibrary(lib);
+        }
+};
+
+void load_lib_and_call_proc()
+{
+    auto lib = LoadLibrary("AccTest.dll");
+}
+
 int main(int argc, const char** argv)
 {
-    
     InitLogs(argc, argv);
-
-    if (argc == 1 || GetBinaryOption("-h", argc, argv, false) ||
-            GetBinaryOption("--help", argc, argv, false)) {
-        SAY_INFO_RAW("Usage:\n\t%s --cov <mod> --cmd <cmd line>\n", argv[0]);
-        SAY_INFO_RAW("Instrumentation options:\n\t"
-                "--inst_bbs_file --inst_bbs_all --inst_int3_blind --fix_dd_refs"
-                " --call_to_jump --skip_small_bb --stop_at {num}\n");
-        SAY_INFO_RAW("Debug options:\n\t"
-                "--disasm --show_flow --inst_debug --trans_debug --single_step"
-                "\n");
-        return -1;
-    }
 
     auto ins = instrumenter();
     std::vector<const char*> cov_mods;
     GetOptionAll("--cov", argc, argv, cov_mods);
-    if (!cov_mods.size()) {
-        SAY_ERROR("Specify at least one --cov parameter.\n");
-        exit(-1);
-        return -1;
-    }
-    for (auto &mod: cov_mods) {
-        ins.add_module(mod);
-    }
 
     auto is_inst_bbs_path = GetOption("--inst_bbs_file", argc, argv);
     if (is_inst_bbs_path) {
@@ -109,17 +126,40 @@ int main(int argc, const char** argv)
         ins.set_stop_at(cycles);
     }
 
-    auto cmd = GetOption("--cmd", argc, argv);
-    if (!cmd) {
-        SAY_ERROR("Specify --cmd parameter.\n");
-        exit(-1);
-        return -1;
+    auto dll = GetOption("--dll", argc, argv);
+    if (!dll) {
+        dll = "AccTest.dll";
     }
-    auto dbg = debugger(cmd, 
-        DEBUG_PROCESS | DEBUG_ONLY_THIS_PROCESS);
-    
-    dbg.register_handler(&ins);
-    dbg.run(-1);
+    if (!cov_mods.size()) {
+        SAY_INFO("Module to instrument: %s\n", dll);
+        cov_mods.push_back(dll);
+    }
+
+    auto func = GetOption("--func", argc, argv);
+    if (!func) {
+        func = "FuzzMe1"; 
+    }
+
+    auto vehi = veh_installer();
+    vehi.register_handler(&ins);
+
+    auto tester = test_acc_test(dll, func);
+    std::vector<size_t> libs_resolved;
+    for (auto &mod_name: cov_mods) {
+        auto lib = (size_t)LoadLibrary(mod_name);
+        if (!lib) 
+            SAY_FATAL("Can't load %s\n", mod_name);
+        libs_resolved.push_back(lib);
+        ins.explicit_instrument_module(lib, mod_name);
+    }
+
+    tester.call_fuzz_proc("01234567", 8);
+
+    ins.print_stats();
+    for (auto &addr: libs_resolved) {
+        ins.uninstrument(addr);
+        FreeLibrary((HMODULE)addr);
+    }
 
     return -1;
 }

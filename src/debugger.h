@@ -7,7 +7,6 @@
 class debugger;
 
 struct idebug_handler {
-    virtual ~idebug_handler() = default;
     virtual DWORD handle_debug_event(DEBUG_EVENT* dbg_event,
             debugger* debuger) = 0;
 };

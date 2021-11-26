@@ -2,6 +2,7 @@
 #define INSTRUMENTOR_H
 
 #include "debugger.h"
+#include "veh.h"
 #include "pe.h"
 #include "translator.h"
 
@@ -36,21 +37,32 @@ struct instrumenter_options {
 };
 
 struct instrumenter_module_data {
-    std::string module_name;
-    mem_tool    shadow;
-    mem_tool    inst;
-    mem_tool    cov;
-    mem_tool    metadata;
-    translator  translator;
+    std::string        module_name;
+    pehelper::pe       pe;
+    pehelper::section* code_sect;
+    mem_tool           shadow;
+    mem_tool           inst;
+    mem_tool           cov;
+    mem_tool           metadata;
+    translator         translator;
 };
 
-class instrumenter: public idebug_handler {
+class instrumenter: public idebug_handler, public iveh_handler {
 
     public:
-        instrumenter() {};
+        instrumenter();
+        ~instrumenter();
+
         DWORD handle_debug_event(DEBUG_EVENT* dbg_event,
                 debugger* debuger) override;
+        DWORD handle_veh(_EXCEPTION_POINTERS* ex_info) override;
+
         void add_module(const char* module);
+
+        void explicit_instrument_module(size_t addr, const char* name);
+
+        void uninstrument(size_t addr);
+
         void print_stats();
 
         // opts setters
@@ -71,26 +83,19 @@ class instrumenter: public idebug_handler {
     private:
 
         DWORD handle_exception(EXCEPTION_DEBUG_INFO* dbg_info);
-        void on_first_breakpoint();
         bool should_instrument_module(const char* name);
         void instrument_module(size_t addr, const char* name);
-        void instrument_module_int3(size_t addr, const char* name);
         bool should_translate(size_t addr);
         void translate_all_bbs();
-        void patch_references_to_section(pehelper::pe* module, 
-                pehelper::section* target_section, 
-                size_t shadow_sect_remote_start);
+        void on_first_breakpoint();
+        HANDLE get_target_process();
+        void redirect_execution(size_t addr, size_t addr_inst);
+        size_t find_module_by_text_address(size_t addr);
 
     private:
         instrumenter_stats m_stats = {0};
-        debugger* m_debugger = NULL;
-        DEBUG_EVENT* m_dbg_event = NULL;
-        bool m_first_breakpoint_reached = false;
 
         std::vector<std::string> m_modules_to_instrument;
-        std::vector<pehelper::pe> m_modules;
-        std::vector<pehelper::section*> m_sections_patched;
-        std::map<size_t, size_t> m_sect_base_to_module;
 
         std::map<size_t, instrumenter_module_data> m_base_to;
         std::map<DWORD, HANDLE> m_tid_to_handle;
@@ -98,6 +103,14 @@ class instrumenter: public idebug_handler {
         std::set<size_t> m_bbs;
 
         instrumenter_options m_opts;
+
+        // valid only for debugger backend
+        debugger* m_debugger = NULL;
+        DEBUG_EVENT* m_dbg_event = NULL;
+        bool m_first_breakpoint_reached = false;
+
+        // valid only for VEH backend
+        CONTEXT* m_ctx = NULL;
 
 };
 
