@@ -346,7 +346,6 @@ void instrumenter::instrument_module(size_t addr, const char* name)
     }
     else { 
         // dep mode
-        __debugbreak();
         code_section->data.make_non_executable();
     }
 
@@ -628,7 +627,7 @@ DWORD instrumenter::handle_debug_event(DEBUG_EVENT* dbg_event,
 
             // extract file name && add to loaded list
             auto mod_name = tools::get_mod_name_by_handle(data.hFile);
-            //if (m_opts.debug)
+            if (m_opts.debug)
                 SAY_INFO("Module loaded %p %s\n",
                         data.lpBaseOfDll,
                         mod_name.c_str());
@@ -663,6 +662,7 @@ DWORD instrumenter::handle_debug_event(DEBUG_EVENT* dbg_event,
                 SAY_INFO("Module unloading %p %s\n", mod_base, 
                         m_loaded_mods[mod_base].c_str());
             }
+
             m_loaded_mods.erase(it);
 
             continue_status = DBG_CONTINUE;

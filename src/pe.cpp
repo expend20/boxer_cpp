@@ -71,10 +71,17 @@ void pehelper::pe::extract_imports(){
     while(1) {
         char* dllName = (char*)sect->data.get_mem_by_addr(
                 imp->Name + m_remote_addr);
+#ifdef _WIN64
         auto origFirstThunk = (IMAGE_THUNK_DATA64*)sect->data.get_mem_by_addr(
                 imp->OriginalFirstThunk + m_remote_addr);
         auto firstThunk = (IMAGE_THUNK_DATA64*)sect->data.get_mem_by_addr(
                 imp->FirstThunk + m_remote_addr);
+#else
+        auto origFirstThunk = (IMAGE_THUNK_DATA32*)sect->data.get_mem_by_addr(
+                imp->OriginalFirstThunk + m_remote_addr);
+        auto firstThunk = (IMAGE_THUNK_DATA32*)sect->data.get_mem_by_addr(
+                imp->FirstThunk + m_remote_addr);
+#endif
 
         SAY_DEBUG("dumping import from %s:", dllName);
 

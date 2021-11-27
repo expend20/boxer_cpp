@@ -153,7 +153,7 @@ int main(int argc, const char** argv)
         ins.explicit_instrument_module(lib, mod_name);
     }
 
-    tester.call_fuzz_proc("01234567", 8);
+    tester.call_fuzz_proc("13371337", 8);
 
     ins.print_stats();
     for (auto &addr: libs_resolved) {

@@ -90,7 +90,12 @@ void mem_tool::end() {
 }
 
 size_t mem_tool::addr_loc_end() {
-    return (size_t)&m_data[0] + m_data.size();
+    if (m_is_local) {
+        return m_local_len + m_addr_remote;
+    }
+    else {
+        return (size_t)&m_data[0] + m_data.size();
+    }
 }
 
 void mem_tool::read() {

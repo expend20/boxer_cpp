@@ -16,14 +16,32 @@
 
 #endif
 
+void translator::adjust_cov_offset(size_t v)
+{
+    m_cov_offset += 4;
+    ASSERT(m_cov_offset <= m_cov_buf->size());
+}
+
+void translator::adjust_inst_offset(size_t v)
+{
+    m_inst_offset += v;
+    ASSERT(m_inst_offset <= m_inst_code->size());
+}
+
+uint8_t* translator::get_inst_ptr()
+{
+    return (uint8_t*)(m_inst_code->addr_loc_old() + m_inst_offset);
+}
+
+uint32_t translator::get_inst_bytes_left()
+{
+    return (uint32_t)(m_inst_code->addr_loc_end() - m_inst_offset);
+}
+
 void translator::make_dword_mov_cov_hit()
 {
     size_t inst_size = 10;
 
-    ASSERT(m_inst_offset + inst_size < m_inst_code->size());
-    ASSERT(m_cov_offset + 4 < m_cov_buf->size());
-
-    size_t bits = 32;
     auto op = dasm::maker();
 
     size_t disp = (m_cov_buf->addr_remote() + m_cov_offset);
@@ -37,45 +55,83 @@ void translator::make_dword_mov_cov_hit()
             xed_imm0(1, 32)
             );
 
-    auto new_inst_size = op.make(
-            (uint8_t*)(m_inst_code->addr_loc_old() + m_inst_offset), 
-            inst_size);
+    auto new_inst_size = op.make(get_inst_ptr(), get_inst_bytes_left());
 
     ASSERT(new_inst_size == inst_size);
-    m_cov_offset += 4;
-    m_inst_offset += new_inst_size;
+    adjust_cov_offset(4);
+    adjust_inst_offset(new_inst_size);
+}
+
+void translator::make_pushf()
+{
+    auto op = dasm::maker();
+    xed_inst0(&op.enc_inst, op.dstate, XED_ICLASS_PUSHF, sizeof(size_t)*8);
+    auto new_inst_size = op.make(get_inst_ptr(), get_inst_bytes_left());
+    adjust_inst_offset(new_inst_size);
+}
+
+void translator::make_popf()
+{
+    auto op = dasm::maker();
+    xed_inst0(&op.enc_inst, op.dstate, XED_ICLASS_POPF, sizeof(size_t)*8);
+    auto new_inst_size = op.make(get_inst_ptr(), get_inst_bytes_left());
+    adjust_inst_offset(new_inst_size);
+}
+
+void translator::adjust_stack(int32_t sp_offset) 
+{
+    auto new_op = dasm::maker();
+    xed_inst2(&new_op.enc_inst, new_op.dstate,
+            XED_ICLASS_ADD, sizeof(size_t) * 8,
+            xed_reg(XED_REG_SP),
+            xed_simm0(sp_offset, 32)
+            );
+    auto new_size = new_op.make(get_inst_ptr(), get_inst_bytes_left());
+    adjust_inst_offset(new_size);
+}
+
+void translator::adjust_stack_red_zone() 
+{
+    if (m_opts.red_zone_size)
+        adjust_stack(-m_opts.red_zone_size);
+}
+
+void translator::adjust_stack_red_zone_back() 
+{
+    if (m_opts.red_zone_size)
+        adjust_stack(m_opts.red_zone_size);
 }
 
 void translator::make_dword_inc_cov_hit()
 {
-    size_t inst_size = 7;
-    ASSERT(m_inst_offset + inst_size < m_inst_code->size());
-    ASSERT(m_cov_offset + 4 < m_cov_buf->size());
+    uint32_t bits = 32;
 
-    size_t bits = 32;
+    make_pushf();
+    adjust_stack_red_zone();
+
+    // add dword ptr [addr], 1
     auto op = dasm::maker();
+    uint32_t inst_size = 7;
+
+    size_t disp = (m_cov_buf->addr_remote() + m_cov_offset);
 #ifdef _WIN64
-    size_t disp = (m_cov_buf->addr_remote() + m_cov_offset)
-        - (m_inst_code->addr_remote() + m_inst_offset + inst_size);
-    xed_inst2(&op.enc_inst, op.dstate,
-            XED_ICLASS_ADD, 0,
-            xed_mem_bd(XED_REG_RIP, xed_disp(disp, bits), bits),
-            xed_imm0(1, 8)
-            );
-#else 
-    size_t disp = m_cov_buf->addr_remote() + m_cov_offset;
-    xed_inst2(&op.enc_inst, op.dstate,
-            XED_ICLASS_ADD, 0,
-            xed_mem_bd(XED_REG_INVALID, xed_disp(disp, bits), bits),
-            xed_imm0(1, 8)
-            );
+    disp -= (m_inst_code->addr_remote() + m_inst_offset + inst_size);
 #endif
-    auto new_inst_size = op.make(
-            (uint8_t*)(m_inst_code->addr_loc_old() + m_inst_offset), 
-            inst_size);
+    xed_inst2(&op.enc_inst, op.dstate,
+            XED_ICLASS_ADD, 0,
+            xed_mem_bd(XED_REG_PC_INVALID, 
+                xed_disp((uint32_t)disp, bits), bits),
+            xed_imm0(1, 8)
+            );
+
+    auto new_inst_size = op.make(get_inst_ptr(), get_inst_bytes_left());
     ASSERT(new_inst_size == inst_size);
-    m_cov_offset += 4;
-    m_inst_offset += new_inst_size;
+
+    adjust_cov_offset(4);
+    adjust_inst_offset(new_inst_size);
+
+    adjust_stack_red_zone_back();
+    make_popf();
 }
 
 void translator::make_jump_to_orig_or_inst(size_t target_addr)
@@ -84,7 +140,6 @@ void translator::make_jump_to_orig_or_inst(size_t target_addr)
     if (already_inst) target_addr = already_inst;
 
     size_t inst_size = 5;
-    ASSERT(m_inst_offset + inst_size < m_inst_code->size());
 
     size_t bits = 32;
     size_t disp = target_addr 
@@ -92,12 +147,10 @@ void translator::make_jump_to_orig_or_inst(size_t target_addr)
     auto op = dasm::maker();
     xed_inst1(&op.enc_inst, op.dstate,
             XED_ICLASS_JMP, 32,
-            xed_relbr(disp, 32));
-    auto new_inst_size = op.make(
-            (uint8_t*)(m_inst_code->addr_loc_old() + m_inst_offset), 
-            inst_size);
+            xed_relbr((uint32_t)disp, 32));
+    auto new_inst_size = op.make(get_inst_ptr(), get_inst_bytes_left());
     ASSERT(new_inst_size == inst_size);
-    m_inst_offset += new_inst_size;
+    adjust_inst_offset(new_inst_size);
 }
 
 void translator::fix_dd_refs() {
@@ -114,8 +167,8 @@ void translator::fix_dd_refs() {
             if (m_opts.debug)
                 SAY_DEBUG("Fixing dd ref at (next) %p to %p -> %p...\n", 
                         next_remote, tgt_ref, inst_addr);
-            uint32_t new_dd = inst_addr - next_remote;
-            *(uint32_t*)loc_ptr = new_dd;
+            size_t new_dd = inst_addr - next_remote;
+            *(uint32_t*)loc_ptr = (uint32_t)new_dd;
         }
         else {
             new_remote_dd_refs.insert(remote_ptr);
@@ -125,7 +178,7 @@ void translator::fix_dd_refs() {
 }
 
 uint32_t translator::translate_call_to_jump(
-        dasm::opcode* op, uint8_t* buf, size_t buf_size, size_t target_addr)
+        dasm::opcode* op, uint8_t* buf, uint32_t buf_size, size_t target_addr)
 {
     // let's translate it to `push <orig_addr> & call`
     
@@ -258,7 +311,7 @@ uint32_t translator::translate_call_to_jump(
         new_op = dasm::maker();
         xed_inst1(&new_op.enc_inst, new_op.dstate,
                 XED_ICLASS_JMP, 32,
-                xed_relbr(target_branch - inst_end,  32)
+                xed_relbr((uint32_t)(target_branch - inst_end),  32)
                 );
         new_size = new_op.make(buf + inst_size, buf_size - inst_size);
         ASSERT(new_size == 5);
@@ -341,14 +394,14 @@ uint32_t translator::make_jump_from_orig_to_inst(
 {
     size_t text_offset = jump_from - m_text_sect->addr_remote();
 
-    size_t inst_size = 5;
+    uint32_t inst_size = 5;
 
     size_t bits = 32;
     size_t disp = jump_to - (jump_from + 5);
     auto op = dasm::maker();
     xed_inst1(&op.enc_inst, op.dstate,
             XED_ICLASS_JMP, 32,
-            xed_relbr(disp, 32));
+            xed_relbr((uint32_t)disp, 32));
     auto new_inst_size = op.make(
             (uint8_t*)(m_text_sect->addr_loc_old() + text_offset), 
             inst_size);
@@ -376,9 +429,8 @@ size_t translator::translate(size_t addr,
     auto rip = addr;
     size_t bb_start = 0;
     size_t inst_start_offset = m_inst_offset;
-    size_t inst_start_ptr = m_inst_code->addr_remote() + m_inst_offset;
     size_t inst_count = 0;
-    size_t orig_size = 0;
+    uint32_t orig_size = 0;
     while(1) {
         auto remote_inst = m_inst_code->addr_remote() + m_inst_offset;
         // should instrument instruction
@@ -388,8 +440,8 @@ size_t translator::translate(size_t addr,
             if (m_opts.debug)
                 SAY_DEBUG("Remote bb got instrumented %p -> %p\n", 
                         rip, remote_inst);
-            //make_dword_inc_cov_hit();
-            make_dword_mov_cov_hit();
+            make_dword_inc_cov_hit();
+            //make_dword_mov_cov_hit();
             remote_inst = m_inst_code->addr_remote() + m_inst_offset;
         }
 
@@ -425,20 +477,17 @@ size_t translator::translate(size_t addr,
         uint32_t inst_sz = 0;
         if (m_opts.call_to_jmp &&
             op->category == XED_CATEGORY_CALL) {
-            inst_sz = translate_call_to_jump(op, 
-                    (uint8_t*)m_inst_code->addr_loc_old() + m_inst_offset,
-                    m_inst_code->addr_loc_end() - local_addr,
-                    rip + op->size_orig);
+            inst_sz = translate_call_to_jump(op, get_inst_ptr(),
+                    get_inst_bytes_left(), rip + op->size_orig);
         }
         else {
-            inst_sz = op->rebuild_to_new_addr(
-                    (uint8_t*)m_inst_code->addr_loc_old() + m_inst_offset,
-                    m_inst_code->addr_loc_end() - local_addr,
+            inst_sz = op->rebuild_to_new_addr(get_inst_ptr(),
+                    get_inst_bytes_left(), 
                     remote_inst);
         }
         ASSERT(inst_sz);
 
-        m_inst_offset += inst_sz;
+        adjust_inst_offset(inst_sz);
         inst_count += 1;
 
         if (op->branch_disp_width) {
@@ -480,7 +529,7 @@ size_t translator::translate(size_t addr,
     }
 
     auto inst_size = m_inst_offset - inst_start_offset;
-    if (instrumented_size) *instrumented_size = inst_size;
+    if (instrumented_size) *instrumented_size = (uint32_t)inst_size;
     if (original_size) {
         if (orig_size < 5) {
             for (size_t i = 0; i < 4; i++) {

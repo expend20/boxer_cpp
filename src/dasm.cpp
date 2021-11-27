@@ -36,8 +36,8 @@ bool dasm::opcode::is_iclass_jxx() {
     return res;
 }
 
-size_t dasm::opcode::rebuild_to_new_addr(
-        uint8_t* buf, size_t buf_size, size_t new_addr)
+uint32_t dasm::opcode::rebuild_to_new_addr(
+        uint8_t* buf, uint32_t buf_size, size_t new_addr)
 {
     xed_encoder_request_init_from_decode(&xedd);
     bool should_rebuild = false;
@@ -86,7 +86,8 @@ bool dasm::opcode::fix_branch_disp(size_t new_addr){
                     tgt_addr, new_addr, size_orig, size_new, 
                     branch_disp, 
                     branch_disp_new);
-        xed_encoder_request_set_branch_displacement(&xedd, branch_disp_new, 4);
+        xed_encoder_request_set_branch_displacement(&xedd, 
+                (uint32_t)branch_disp_new, 4);
         return true;
     }
     return false;
@@ -206,7 +207,7 @@ dasm::opcode::opcode(size_t data, size_t addr_arg) {
     branch_disp_width = xed_decoded_inst_get_branch_displacement_width(&xedd);
 
     // jmp [rel32]
-    mem_disp  = xed_decoded_inst_get_memory_displacement(&xedd, 0);
+    mem_disp  = (size_t)xed_decoded_inst_get_memory_displacement(&xedd, 0);
     mem_disp_width = xed_decoded_inst_get_memory_displacement_width(&xedd, 0);
 
     category      = xed_decoded_inst_get_category(&xedd);

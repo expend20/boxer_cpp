@@ -19,6 +19,7 @@ struct translator_opts {
     bool single_step = false;
     bool call_to_jmp = false;
     mem_tool* shadow_code = 0;
+    int32_t red_zone_size = 4;
 };
 
 class translator {
@@ -36,14 +37,25 @@ class translator {
         size_t translate(size_t addr, uint32_t* instrumented_size, 
                 uint32_t* original_size);
 
+        void make_pushf();
+        void make_popf();
         void make_dword_inc_cov_hit();
         void make_dword_mov_cov_hit();
         void make_jump_to_orig_or_inst(size_t target_addr);
         uint32_t make_jump_from_orig_to_inst(size_t jump_from, size_t jump_to);
         uint32_t translate_call_to_jump(
-                dasm::opcode* op, uint8_t* buf, size_t buf_size, 
+                dasm::opcode* op, uint8_t* buf, uint32_t buf_size, 
                 size_t target_addr);
         void fix_dd_refs();
+
+        void adjust_stack_red_zone();
+        void adjust_stack_red_zone_back();
+        void adjust_stack(int32_t sp_offset);
+
+        uint8_t* get_inst_ptr();
+        uint32_t get_inst_bytes_left();
+        void adjust_inst_offset(size_t v);
+        void adjust_cov_offset(size_t v);
 
         void set_debug() { m_opts.debug = true; };
         void set_disasm() { m_opts.disasm = true; };

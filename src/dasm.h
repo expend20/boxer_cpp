@@ -68,8 +68,8 @@ namespace dasm {
                 size_t code_sect_new, size_t code_sect_size);
 
         uint8_t* rebuild();
-        size_t rebuild_to_new_addr(
-                uint8_t* buf, size_t buf_size, size_t new_addr);
+        uint32_t rebuild_to_new_addr(
+                uint8_t* buf, uint32_t buf_size, size_t new_addr);
         xed_decoded_inst_t* get_xedd_ptr() {
             return &xedd;
         };
