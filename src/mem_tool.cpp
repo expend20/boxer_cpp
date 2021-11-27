@@ -51,11 +51,42 @@ size_t mem_tool::addr_remote() {
     return m_addr_remote;
 }
 size_t mem_tool::size() {
-    return m_data.size();
+    if (m_is_local) 
+        return m_local_len;
+    else
+        return m_data.size();
 }
 
-size_t mem_tool::addr_loc() {
+size_t mem_tool::addr_loc_old() {
+    if (m_is_local) return m_addr_remote;
     return (size_t)&m_data[0];
+}
+
+void mem_tool::begin() {
+    if (m_is_local) {
+        change_protection(PAGE_READWRITE);
+    }
+}
+
+size_t mem_tool::begin_addr_loc() {
+    // Here we start the transaction and return local address
+    if (m_is_local) {
+        begin();
+        return m_addr_remote;
+    }
+    else {
+        // just return the copy to a pointer
+        return (size_t)&m_data[0];
+    }
+}
+
+void mem_tool::end() {
+    if (m_is_local) {
+        restore_prev_protection();
+    }
+    else {
+        commit_remote();
+    }
 }
 
 size_t mem_tool::addr_loc_end() {
@@ -82,15 +113,25 @@ mem_tool::mem_tool(HANDLE process, size_t data, size_t len) {
     ASSERT(data);
     ASSERT(len);
 
+    if (GetCurrentProcess() == process) {
+        m_is_local = true;
+        m_local_len = len;
+    }
+    else {
+        // we don't need the copy for local process
+        m_data.resize(len);
+    }
+
     m_addr_remote = data;
     m_proc = process;
-
-    m_data.resize(len);
 
     read();
 }
 
-void mem_tool::commit() {
+void mem_tool::commit_remote() {
+
+    if (m_is_local) return; 
+
     SIZE_T rw = 0;
 
     change_protection(PAGE_READWRITE);
@@ -110,36 +151,38 @@ void mem_tool::commit() {
 
 size_t mem_tool::change_protection(DWORD prot){
 
-    auto sz = m_data.size();
+    auto sz = m_is_local ? m_local_len : m_data.size();
     ASSERT(sz != 0);
 
-    if (!VirtualProtectEx(m_proc, (void*)m_addr_remote, m_data.size(),
-                prot, &m_oldProt)) {
+    if (!VirtualProtectEx(m_proc, (void*)m_addr_remote, sz,
+                prot, &m_old_prot)) {
         SAY_FATAL("Can't protect memory %p:%x, err %s", m_addr_remote,
-                m_data.size(), helper::getLastErrorAsString().c_str());
+                sz, helper::getLastErrorAsString().c_str());
     } else {
 
         SAY_DEBUG("Section %p:%x changed protection from %x to %x\n",
-                m_addr_remote, m_data.size(), m_oldProt, prot);
+                m_addr_remote, sz, m_old_prot, prot);
     }
 
     return 0;
 }
 
 size_t mem_tool::restore_prev_protection(){
-    DWORD newProt = 0;
+    DWORD new_prot = 0;
+    auto sz = m_is_local ? m_local_len : m_data.size();
+    ASSERT(sz != 0);
 
-    SAY_DEBUG("Restoring section protection %x %p:%p\n", m_oldProt,
-            m_addr_remote, m_data.size());
+    SAY_DEBUG("Restoring section protection %x %p:%p\n", m_old_prot,
+            m_addr_remote, sz);
 
-    BOOL res = VirtualProtectEx(m_proc, (void*)m_addr_remote, m_data.size(), 
-            m_oldProt, &newProt);
+    BOOL res = VirtualProtectEx(m_proc, (void*)m_addr_remote, sz, 
+            m_old_prot, &new_prot);
     if (!res) {
         SAY_FATAL("Can't restore memory prot %p:%x, err %s", m_addr_remote,
-                m_data.size(), helper::getLastErrorAsString().c_str());
+                sz, helper::getLastErrorAsString().c_str());
     }
 
-    m_oldProt = newProt;
+    m_old_prot = new_prot;
     return 0;
 
 }

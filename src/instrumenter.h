@@ -11,7 +11,8 @@
 #include <vector>
 
 struct instrumenter_stats {
-    size_t dbg_callbaks = 0;
+    size_t dbg_callbacks = 0;
+    size_t veh_callbacks = 0;
     size_t exceptions = 0;
     size_t breakpoints = 0;
     size_t avs = 0;

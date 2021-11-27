@@ -34,9 +34,22 @@ size_t instrumenter::find_inst_module(size_t addr)
 void instrumenter::translate_all_bbs()
 {
     SAY_INFO("Translating all basicblocks (could take a while)...\n");
+
     size_t mod_base = find_inst_module(*m_bbs.begin());
     ASSERT(mod_base);
+
     pehelper::section* code_sect = m_inst_mods[mod_base].code_sect;
+
+    code_sect->data.begin();
+    m_inst_mods[mod_base].inst.begin();
+
+    auto code_sect_local = code_sect->data.addr_loc_old();
+    auto code_sect_remote = code_sect->data.addr_remote();
+
+    auto shadow_sect = &m_inst_mods[mod_base].shadow;
+    ASSERT(shadow_sect);
+    auto shadow_sect_local = shadow_sect->addr_loc_old();
+
     translator* trans = &m_inst_mods[mod_base].translator;
     for (auto &addr: m_bbs) {
 
@@ -53,18 +66,15 @@ void instrumenter::translate_all_bbs()
             // NOTE: restoring the orig data, could be a solution
             // if we decide skip bbs 
             m_stats.bb_skipped++;
-            if (m_opts.skip_small_bb && 
-                    m_inst_mods[mod_base].shadow.size()
-               ) {
+            if (m_opts.skip_small_bb) {
                 //SAY_INFO("skipping bb cov at %p...\n", addr);
-                auto shadow_sect = &m_inst_mods[mod_base].shadow;
-                auto offset = addr - code_sect->data.addr_remote();
+                auto offset = addr - code_sect_remote;
                 //SAY_INFO("restoring orig: %p %p %x\n",
                 //        (void*)(code_sect->data.addr_loc() + offset),
                 //        (void*)(shadow_sect->addr_loc() + offset),
                 //        orig_size);
-                memcpy((void*)(code_sect->data.addr_loc() + offset),
-                        (void*)(shadow_sect->addr_loc() + offset),
+                memcpy((void*)(code_sect_local + offset),
+                        (void*)(shadow_sect_local + offset),
                         orig_size);
             }
             //if (orig_size < 2) 
@@ -82,8 +92,9 @@ void instrumenter::translate_all_bbs()
         trans->fix_dd_refs();
 
     // Call commit on inst code
-    code_sect->data.commit();
-    m_inst_mods[mod_base].inst.commit();
+    code_sect->data.end();
+    m_inst_mods[mod_base].inst.end();
+
     auto r = FlushInstructionCache(
             this->get_target_process(),
             (void*)code_sect->data.addr_remote(), 
@@ -173,6 +184,8 @@ bool instrumenter::translate_or_redirect(size_t addr)
     if (!inst_addr) { 
         m_stats.translator_called++;
 
+        m_inst_mods[mod_base].inst.begin();
+
         if (m_opts.debug) 
             SAY_DEBUG("Address not found, instrumenting...\n");
         uint32_t inst_size = 0;
@@ -185,6 +198,7 @@ bool instrumenter::translate_or_redirect(size_t addr)
         if (m_opts.is_bbs_inst ||
                 m_opts.is_int3_inst_blind) {
 
+            code_sect->data.begin();
             if (orig_size < 5) {
                 //SAY_ERROR("BB at %p has size %d (inst %d), we need at "
                 //        "least 5 to make jump\n", 
@@ -203,8 +217,8 @@ bool instrumenter::translate_or_redirect(size_t addr)
                     //        (void*)(sect->data.addr_loc() + offset),
                     //        (void*)(shadow_sect->addr_loc() + offset),
                     //        orig_size);
-                    memcpy((void*)(code_sect->data.addr_loc() + offset),
-                            (void*)(shadow_sect->addr_loc() + offset),
+                    memcpy((void*)(code_sect->data.addr_loc_old() + offset),
+                            (void*)(shadow_sect->addr_loc_old() + offset),
                             orig_size);
                 }
                 //if (orig_size < 2) 
@@ -217,17 +231,17 @@ bool instrumenter::translate_or_redirect(size_t addr)
                 auto jump_size = trans->make_jump_from_orig_to_inst(
                         addr, inst_addr);
                 // Commit on orig code
-                code_sect->data.commit();
                 auto r = FlushInstructionCache(
                         get_target_process(),
                         (void*)addr, jump_size
                         );
                 ASSERT(r);
             }
+            code_sect->data.end();
         }
 
         // Call commit on inst code
-        m_inst_mods[mod_base].inst.commit();
+        m_inst_mods[mod_base].inst.end();
 
         auto r = FlushInstructionCache(
                 get_target_process(),
@@ -279,23 +293,23 @@ void instrumenter::instrument_module(size_t addr, const char* name)
                 hproc,
                 img_end,
                 shadow_code_size,
-                PAGE_READONLY);
+                PAGE_READWRITE);
         ASSERT(shadow_code_ptr);
         m_inst_mods[addr].shadow = mem_tool(hproc, shadow_code_ptr, 
                 shadow_code_size);
         shadow_code_data = &m_inst_mods[addr].shadow;
 
         // copy text to shadow
-        memcpy((void*)shadow_code_data->addr_loc(),
-                (void*)code_section->data.addr_loc(), 
+        memcpy((void*)shadow_code_data->addr_loc_old(),
+                (void*)code_section->data.addr_loc_old(), 
                 shadow_code_data->size());
         if (m_opts.debug) 
             SAY_INFO("copied loc %p %p %x\n",
-                    (void*)shadow_code_data->addr_loc(),
-                    (void*)code_section->data.addr_loc(), 
+                    (void*)shadow_code_data->addr_loc_old(),
+                    (void*)code_section->data.addr_loc_old(), 
                     shadow_code_data->size());
-        shadow_code_data->commit();
 
+        code_section->data.begin();
         if (m_opts.is_bbs_inst) {
             // fill text with int3s based on bbs file
             auto offsets = helper::files2Vector(m_opts.bbs_path);
@@ -309,7 +323,8 @@ void instrumenter::instrument_module(size_t addr, const char* name)
                     continue;
                 }
                 m_bbs.insert(ptr[i] + addr);
-                *(uint8_t*)(code_section->data.addr_loc() + sect_offset) = 0xcc;
+                *(uint8_t*)(code_section->data.addr_loc_old() + 
+                        sect_offset) = 0xcc;
             }
             SAY_INFO("%d offsets patched to int3\n", 
                     offsets[0].size() - offsets_not_in_code);
@@ -319,14 +334,14 @@ void instrumenter::instrument_module(size_t addr, const char* name)
             }
 
         }
-        else {
+        if (m_opts.is_int3_inst_blind) {
             // fill all the text section with int3s
-            memset((void*)code_section->data.addr_loc(), 
+            memset((void*)code_section->data.addr_loc_old(), 
                     0xcc,
                     code_section->data.size());
         }
 
-        code_section->data.commit();
+        code_section->data.end();
         img_end = shadow_code_ptr + shadow_code_size;
     }
     else { 
@@ -515,14 +530,16 @@ DWORD instrumenter::handle_exception(EXCEPTION_DEBUG_INFO* dbg_info)
 void instrumenter::print_stats() 
 {
     SAY_INFO("Instrumenter stats: \n"
-            "%20d dbg_callbaks\n"
+            "%20d dbg callbacks\n"
+            "%20d veh callbacks\n"
             "%20d exceptions\n"
             "%20d breakpoints\n"
             "%20d avs\n"
             "%20d translator_called\n"
             "%20d rip_redirections\n"
             "%20d bb_skipped\n",
-            m_stats.dbg_callbaks,
+            m_stats.dbg_callbacks,
+            m_stats.veh_callbacks,
             m_stats.exceptions,
             m_stats.breakpoints,
             m_stats.avs,
@@ -532,6 +549,7 @@ void instrumenter::print_stats()
             );
 }
 DWORD instrumenter::handle_veh(_EXCEPTION_POINTERS* ex_info) {
+    m_stats.veh_callbacks++;
     m_ctx = ex_info->ContextRecord;
     auto res = EXCEPTION_CONTINUE_SEARCH;
 
@@ -554,11 +572,11 @@ DWORD instrumenter::handle_debug_event(DEBUG_EVENT* dbg_event,
     if (m_opts.debug) {
         SAY_DEBUG("Instrumentor::handle_debug_event: %x / %x\n", 
                 dbg_event->dwDebugEventCode,
-                m_stats.dbg_callbaks);
+                m_stats.dbg_callbacks);
     }
     if (m_opts.stop_at &&
-            m_stats.dbg_callbaks >= m_opts.stop_at) {
-        SAY_INFO("Stopping at iteration # %d\n", m_stats.dbg_callbaks);
+            m_stats.dbg_callbacks >= m_opts.stop_at) {
+        SAY_INFO("Stopping at iteration # %d\n", m_stats.dbg_callbacks);
         tools::write_minidump("stop_at.dmp", get_target_process());
         print_stats();
         m_debugger->stop();
@@ -567,7 +585,7 @@ DWORD instrumenter::handle_debug_event(DEBUG_EVENT* dbg_event,
     m_debugger = debugger;
     m_dbg_event = dbg_event;
 
-    m_stats.dbg_callbaks++;
+    m_stats.dbg_callbacks++;
     auto continue_status = DBG_EXCEPTION_NOT_HANDLED;
 
     switch (dbg_event->dwDebugEventCode) {
@@ -680,11 +698,11 @@ DWORD instrumenter::handle_debug_event(DEBUG_EVENT* dbg_event,
                         data.nDebugStringLength);
                 if (data.fUnicode) {
                     SAY_INFO("OutputDebugStringW called: %S\n", 
-                            (void*)str.addr_loc());
+                            (void*)str.addr_loc_old());
                 }
                 else {
                     SAY_INFO("OutputDebugStringA called: %s\n", 
-                            (void*)str.addr_loc());
+                            (void*)str.addr_loc_old());
                 }
             }
             continue_status = DBG_CONTINUE;
@@ -717,10 +735,11 @@ void instrumenter::uninstrument(size_t addr)
     }
     if (data.shadow.size()) {
         // restore code section
-        memcpy((void*)data.shadow.addr_loc(),
-                (void*)data.code_sect->data.addr_loc(), 
+        data.code_sect->data.begin();
+        memcpy((void*)data.shadow.addr_loc_old(),
+                (void*)data.code_sect->data.addr_loc_old(), 
                 data.shadow.size());
-        data.code_sect->data.commit();
+        data.code_sect->data.end();
         
         r = VirtualFreeEx(proc, (void*)data.shadow.addr_remote(), 0, 
                 MEM_RELEASE);

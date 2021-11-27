@@ -17,6 +17,11 @@ class mem_tool {
         mem_tool(){};
         mem_tool(HANDLE process, size_t data, size_t len);
 
+        // Use this 
+        size_t begin_addr_loc();
+        void begin();
+        void end();
+
         size_t get_mem_by_offset(size_t offset);
         size_t get_mem_by_addr(size_t addr);
 
@@ -27,10 +32,11 @@ class mem_tool {
 
         size_t get_bytes_left_by_addr(size_t addr);
 
-        void commit();
+
+        void commit_remote();
         void read();
 
-        size_t addr_loc();
+        size_t addr_loc_old();
         size_t addr_loc_end();
         size_t size();
         size_t addr_remote();
@@ -43,10 +49,17 @@ class mem_tool {
         HANDLE get_proc() { return m_proc; };
 
     private:
-        std::vector<uint8_t> m_data;
         HANDLE               m_proc = 0;
         size_t               m_addr_remote = 0;
-        DWORD                m_oldProt = 0;
+        DWORD                m_old_prot = 0;
+        bool                 m_is_local = false;
+
+        // used only if m_is_local=true
+        size_t               m_local_len = 0;
+
+        // used only if m_is_local=false
+        std::vector<uint8_t> m_data;
+
 
 };
 

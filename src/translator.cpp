@@ -38,7 +38,7 @@ void translator::make_dword_mov_cov_hit()
             );
 
     auto new_inst_size = op.make(
-            (uint8_t*)(m_inst_code->addr_loc() + m_inst_offset), 
+            (uint8_t*)(m_inst_code->addr_loc_old() + m_inst_offset), 
             inst_size);
 
     ASSERT(new_inst_size == inst_size);
@@ -71,7 +71,7 @@ void translator::make_dword_inc_cov_hit()
             );
 #endif
     auto new_inst_size = op.make(
-            (uint8_t*)(m_inst_code->addr_loc() + m_inst_offset), 
+            (uint8_t*)(m_inst_code->addr_loc_old() + m_inst_offset), 
             inst_size);
     ASSERT(new_inst_size == inst_size);
     m_cov_offset += 4;
@@ -94,7 +94,7 @@ void translator::make_jump_to_orig_or_inst(size_t target_addr)
             XED_ICLASS_JMP, 32,
             xed_relbr(disp, 32));
     auto new_inst_size = op.make(
-            (uint8_t*)(m_inst_code->addr_loc() + m_inst_offset), 
+            (uint8_t*)(m_inst_code->addr_loc_old() + m_inst_offset), 
             inst_size);
     ASSERT(new_inst_size == inst_size);
     m_inst_offset += new_inst_size;
@@ -105,7 +105,7 @@ void translator::fix_dd_refs() {
     std::set<size_t> new_remote_dd_refs;
     for (auto &remote_ptr: m_remote_dd_refs) {
         auto offset = remote_ptr - m_inst_code->addr_remote();
-        auto loc_ptr = m_inst_code->addr_loc() + offset;
+        auto loc_ptr = m_inst_code->addr_loc_old() + offset;
         auto disp = *(int32_t*)loc_ptr;
         auto next_remote = offset + 4 + m_inst_code->addr_remote();
         auto tgt_ref = disp + next_remote;
@@ -350,7 +350,7 @@ uint32_t translator::make_jump_from_orig_to_inst(
             XED_ICLASS_JMP, 32,
             xed_relbr(disp, 32));
     auto new_inst_size = op.make(
-            (uint8_t*)(m_text_sect->addr_loc() + text_offset), 
+            (uint8_t*)(m_text_sect->addr_loc_old() + text_offset), 
             inst_size);
     ASSERT(new_inst_size == inst_size);
     return new_inst_size;
@@ -396,8 +396,8 @@ size_t translator::translate(size_t addr,
         // disasm & cache
         auto offset = rip - m_text_sect_remote_addr;
         auto local_addr = m_opts.shadow_code ? 
-            m_opts.shadow_code->addr_loc() + offset:
-            m_text_sect->addr_loc() + offset;
+            m_opts.shadow_code->addr_loc_old() + offset:
+            m_text_sect->addr_loc_old() + offset;
         if (m_opts.debug)
             SAY_DEBUG("Disasm (%x) local: %p remote: %p text sect remote: "
                     "%p\n", 
@@ -426,13 +426,13 @@ size_t translator::translate(size_t addr,
         if (m_opts.call_to_jmp &&
             op->category == XED_CATEGORY_CALL) {
             inst_sz = translate_call_to_jump(op, 
-                    (uint8_t*)m_inst_code->addr_loc() + m_inst_offset,
+                    (uint8_t*)m_inst_code->addr_loc_old() + m_inst_offset,
                     m_inst_code->addr_loc_end() - local_addr,
                     rip + op->size_orig);
         }
         else {
             inst_sz = op->rebuild_to_new_addr(
-                    (uint8_t*)m_inst_code->addr_loc() + m_inst_offset,
+                    (uint8_t*)m_inst_code->addr_loc_old() + m_inst_offset,
                     m_inst_code->addr_loc_end() - local_addr,
                     remote_inst);
         }
@@ -486,8 +486,10 @@ size_t translator::translate(size_t addr,
             for (size_t i = 0; i < 4; i++) {
                 // if we have 0xcc after a basicblock end, we can safely use it
                 auto offset = orig_size + addr - m_text_sect_remote_addr;
-                auto base = m_opts.shadow_code ? m_opts.shadow_code->addr_loc()
-                            : m_text_sect->addr_loc();
+                auto base = 
+                    m_opts.shadow_code ? 
+                    m_opts.shadow_code->addr_loc_old() : 
+                    m_text_sect->addr_loc_old();
                 if (0xcc == *(uint8_t*)(base + offset + i)) {
                     orig_size++;
                 }
