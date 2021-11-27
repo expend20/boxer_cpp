@@ -62,6 +62,7 @@ class instrumenter: public idebug_handler, public iveh_handler {
         void explicit_instrument_module(size_t addr, const char* name);
 
         void uninstrument(size_t addr);
+        void uninstrument_all();
 
         void print_stats();
 
@@ -85,29 +86,28 @@ class instrumenter: public idebug_handler, public iveh_handler {
         DWORD handle_exception(EXCEPTION_DEBUG_INFO* dbg_info);
         bool should_instrument_module(const char* name);
         void instrument_module(size_t addr, const char* name);
-        bool should_translate(size_t addr);
+        bool translate_or_redirect(size_t addr);
         void translate_all_bbs();
         void on_first_breakpoint();
         HANDLE get_target_process();
         void redirect_execution(size_t addr, size_t addr_inst);
-        size_t find_module_by_text_address(size_t addr);
+        size_t find_inst_module(size_t addr);
 
     private:
         instrumenter_stats m_stats = {0};
+        instrumenter_options m_opts;
 
-        std::vector<std::string> m_modules_to_instrument;
-
-        std::map<size_t, instrumenter_module_data> m_base_to;
-        std::map<DWORD, HANDLE> m_tid_to_handle;
+        std::map<size_t, instrumenter_module_data> m_inst_mods;
 
         std::set<size_t> m_bbs;
 
-        instrumenter_options m_opts;
-
         // valid only for debugger backend
+        std::vector<std::string> m_modules_to_instrument;
+        std::map<size_t, std::string> m_loaded_mods;
         debugger* m_debugger = NULL;
         DEBUG_EVENT* m_dbg_event = NULL;
         bool m_first_breakpoint_reached = false;
+        std::map<DWORD, HANDLE> m_tid_to_handle;
 
         // valid only for VEH backend
         CONTEXT* m_ctx = NULL;

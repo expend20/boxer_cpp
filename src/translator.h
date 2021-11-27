@@ -33,7 +33,7 @@ class translator {
                 size_t text_sect_remote_addr);
 
         size_t remote_orig_to_inst_bb(size_t addr);
-        size_t instrument(size_t addr, uint32_t* instrumented_size, 
+        size_t translate(size_t addr, uint32_t* instrumented_size, 
                 uint32_t* original_size);
 
         void make_dword_inc_cov_hit();

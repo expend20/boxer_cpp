@@ -37,6 +37,7 @@ debugger::debugger(const char* cmd_line,
             m_pi.dwThreadId);
     CloseHandle(m_pi.hProcess);
     m_pi.hProcess = OpenProcess(PROCESS_ALL_ACCESS, false, m_pi.dwProcessId);
+    SAY_INFO("new proc handle %x\n", m_pi.hProcess);
     ASSERT(m_pi.hProcess);
 
 };

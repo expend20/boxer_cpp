@@ -21,15 +21,15 @@ LONG WINAPI veh_installer::static_handler(_EXCEPTION_POINTERS* ex_info) {
 
 veh_installer::veh_installer() {
 
-    if (m_inst) SAY_FATAL("Only one instance is allowed");
+    if (m_inst) SAY_FATAL("Only one instance is allowed\n");
     m_inst = this;
     InitializeCriticalSection(&m_crit_sect);
 
     m_veh_handler = AddVectoredExceptionHandler(0, static_handler);
     if (!m_veh_handler) {
-        SAY_FATAL("Can't setup the VEH handler");
+        SAY_FATAL("Can't setup the VEH handler\n");
     }
-    SAY_DEBUG("VEH handler set up: %p, addr %p", 
+    SAY_DEBUG("VEH handler set up: %p, addr %p\n", 
             m_veh_handler, &m_veh_handler);
 }
 

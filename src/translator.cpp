@@ -363,7 +363,7 @@ uint32_t translator::make_jump_from_orig_to_inst(
 // duplication. We also do not follow any references in advance. 
 // This strategy leads to the instrumentation of only code wich is hit.
 
-size_t translator::instrument(size_t addr, 
+size_t translator::translate(size_t addr, 
         uint32_t* instrumented_size,
         uint32_t* original_size)
 {

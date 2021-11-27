@@ -120,6 +120,7 @@ int main(int argc, const char** argv)
     
     dbg.register_handler(&ins);
     dbg.run(-1);
+    ins.uninstrument_all();
 
     return -1;
 }
