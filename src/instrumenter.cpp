@@ -43,12 +43,12 @@ void instrumenter::translate_all_bbs()
     code_sect->data.begin();
     m_inst_mods[mod_base].inst.begin();
 
-    auto code_sect_local = code_sect->data.addr_loc_old();
+    auto code_sect_local = code_sect->data.addr_loc_raw();
     auto code_sect_remote = code_sect->data.addr_remote();
 
     auto shadow_sect = &m_inst_mods[mod_base].shadow;
     ASSERT(shadow_sect);
-    auto shadow_sect_local = shadow_sect->addr_loc_old();
+    auto shadow_sect_local = shadow_sect->addr_loc_raw();
 
     translator* trans = &m_inst_mods[mod_base].translator;
     for (auto &addr: m_bbs) {
@@ -217,8 +217,8 @@ bool instrumenter::translate_or_redirect(size_t addr)
                     //        (void*)(sect->data.addr_loc() + offset),
                     //        (void*)(shadow_sect->addr_loc() + offset),
                     //        orig_size);
-                    memcpy((void*)(code_sect->data.addr_loc_old() + offset),
-                            (void*)(shadow_sect->addr_loc_old() + offset),
+                    memcpy((void*)(code_sect->data.addr_loc_raw() + offset),
+                            (void*)(shadow_sect->addr_loc_raw() + offset),
                             orig_size);
                 }
                 //if (orig_size < 2) 
@@ -300,13 +300,13 @@ void instrumenter::instrument_module(size_t addr, const char* name)
         shadow_code_data = &m_inst_mods[addr].shadow;
 
         // copy text to shadow
-        memcpy((void*)shadow_code_data->addr_loc_old(),
-                (void*)code_section->data.addr_loc_old(), 
+        memcpy((void*)shadow_code_data->addr_loc_raw(),
+                (void*)code_section->data.addr_loc_raw(), 
                 shadow_code_data->size());
         if (m_opts.debug) 
             SAY_INFO("copied loc %p %p %x\n",
-                    (void*)shadow_code_data->addr_loc_old(),
-                    (void*)code_section->data.addr_loc_old(), 
+                    (void*)shadow_code_data->addr_loc_raw(),
+                    (void*)code_section->data.addr_loc_raw(), 
                     shadow_code_data->size());
 
         code_section->data.begin();
@@ -323,7 +323,7 @@ void instrumenter::instrument_module(size_t addr, const char* name)
                     continue;
                 }
                 m_bbs.insert(ptr[i] + addr);
-                *(uint8_t*)(code_section->data.addr_loc_old() + 
+                *(uint8_t*)(code_section->data.addr_loc_raw() + 
                         sect_offset) = 0xcc;
             }
             SAY_INFO("%d offsets patched to int3\n", 
@@ -336,7 +336,7 @@ void instrumenter::instrument_module(size_t addr, const char* name)
         }
         if (m_opts.is_int3_inst_blind) {
             // fill all the text section with int3s
-            memset((void*)code_section->data.addr_loc_old(), 
+            memset((void*)code_section->data.addr_loc_raw(), 
                     0xcc,
                     code_section->data.size());
         }
@@ -698,11 +698,11 @@ DWORD instrumenter::handle_debug_event(DEBUG_EVENT* dbg_event,
                         data.nDebugStringLength);
                 if (data.fUnicode) {
                     SAY_INFO("OutputDebugStringW called: %S\n", 
-                            (void*)str.addr_loc_old());
+                            (void*)str.addr_loc_raw());
                 }
                 else {
                     SAY_INFO("OutputDebugStringA called: %s\n", 
-                            (void*)str.addr_loc_old());
+                            (void*)str.addr_loc_raw());
                 }
             }
             continue_status = DBG_CONTINUE;
@@ -736,8 +736,8 @@ void instrumenter::uninstrument(size_t addr)
     if (data.shadow.size()) {
         // restore code section
         data.code_sect->data.begin();
-        memcpy((void*)data.shadow.addr_loc_old(),
-                (void*)data.code_sect->data.addr_loc_old(), 
+        memcpy((void*)data.shadow.addr_loc_raw(),
+                (void*)data.code_sect->data.addr_loc_raw(), 
                 data.shadow.size());
         data.code_sect->data.end();
         

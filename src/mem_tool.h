@@ -36,7 +36,7 @@ class mem_tool {
         void commit_remote();
         void read();
 
-        size_t addr_loc_old();
+        size_t addr_loc_raw();
         size_t addr_loc_end();
         size_t size();
         size_t addr_remote();

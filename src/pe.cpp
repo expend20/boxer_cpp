@@ -289,7 +289,7 @@ void pehelper::pe::extract_sections() {
     /*
      * Let's enumerate sections and fill the data
      */
-    auto dos = (IMAGE_DOS_HEADER*)m_img_header.addr_loc_old();
+    auto dos = (IMAGE_DOS_HEADER*)m_img_header.addr_loc_raw();
     ASSERT(dos->e_magic == IMAGE_DOS_SIGNATURE);
 
 #ifdef _WIN64

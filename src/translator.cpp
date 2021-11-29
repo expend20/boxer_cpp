@@ -30,7 +30,7 @@ void translator::adjust_inst_offset(size_t v)
 
 uint8_t* translator::get_inst_ptr()
 {
-    return (uint8_t*)(m_inst_code->addr_loc_old() + m_inst_offset);
+    return (uint8_t*)(m_inst_code->addr_loc_raw() + m_inst_offset);
 }
 
 uint32_t translator::get_inst_bytes_left()
@@ -158,7 +158,7 @@ void translator::fix_dd_refs() {
     std::set<size_t> new_remote_dd_refs;
     for (auto &remote_ptr: m_remote_dd_refs) {
         auto offset = remote_ptr - m_inst_code->addr_remote();
-        auto loc_ptr = m_inst_code->addr_loc_old() + offset;
+        auto loc_ptr = m_inst_code->addr_loc_raw() + offset;
         auto disp = *(int32_t*)loc_ptr;
         auto next_remote = offset + 4 + m_inst_code->addr_remote();
         auto tgt_ref = disp + next_remote;
@@ -403,7 +403,7 @@ uint32_t translator::make_jump_from_orig_to_inst(
             XED_ICLASS_JMP, 32,
             xed_relbr((uint32_t)disp, 32));
     auto new_inst_size = op.make(
-            (uint8_t*)(m_text_sect->addr_loc_old() + text_offset), 
+            (uint8_t*)(m_text_sect->addr_loc_raw() + text_offset), 
             inst_size);
     ASSERT(new_inst_size == inst_size);
     return new_inst_size;
@@ -448,8 +448,8 @@ size_t translator::translate(size_t addr,
         // disasm & cache
         auto offset = rip - m_text_sect_remote_addr;
         auto local_addr = m_opts.shadow_code ? 
-            m_opts.shadow_code->addr_loc_old() + offset:
-            m_text_sect->addr_loc_old() + offset;
+            m_opts.shadow_code->addr_loc_raw() + offset:
+            m_text_sect->addr_loc_raw() + offset;
         if (m_opts.debug)
             SAY_DEBUG("Disasm (%x) local: %p remote: %p text sect remote: "
                     "%p\n", 
@@ -537,8 +537,8 @@ size_t translator::translate(size_t addr,
                 auto offset = orig_size + addr - m_text_sect_remote_addr;
                 auto base = 
                     m_opts.shadow_code ? 
-                    m_opts.shadow_code->addr_loc_old() : 
-                    m_text_sect->addr_loc_old();
+                    m_opts.shadow_code->addr_loc_raw() : 
+                    m_text_sect->addr_loc_raw();
                 if (0xcc == *(uint8_t*)(base + offset + i)) {
                     orig_size++;
                 }

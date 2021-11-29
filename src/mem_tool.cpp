@@ -57,7 +57,7 @@ size_t mem_tool::size() {
         return m_data.size();
 }
 
-size_t mem_tool::addr_loc_old() {
+size_t mem_tool::addr_loc_raw() {
     if (m_is_local) return m_addr_remote;
     return (size_t)&m_data[0];
 }
