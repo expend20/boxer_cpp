@@ -37,25 +37,8 @@ class translator {
         size_t translate(size_t addr, uint32_t* instrumented_size, 
                 uint32_t* original_size);
 
-        void make_pushf();
-        void make_popf();
-        void make_dword_inc_cov_hit();
-        void make_dword_mov_cov_hit();
-        void make_jump_to_orig_or_inst(size_t target_addr);
         uint32_t make_jump_from_orig_to_inst(size_t jump_from, size_t jump_to);
-        uint32_t translate_call_to_jump(
-                dasm::opcode* op, uint8_t* buf, uint32_t buf_size, 
-                size_t target_addr);
         void fix_dd_refs();
-
-        void adjust_stack_red_zone();
-        void adjust_stack_red_zone_back();
-        void adjust_stack(int32_t sp_offset);
-
-        uint8_t* get_inst_ptr();
-        uint32_t get_inst_bytes_left();
-        void adjust_inst_offset(size_t v);
-        void adjust_cov_offset(size_t v);
 
         void set_debug() { m_opts.debug = true; };
         void set_disasm() { m_opts.disasm = true; };
@@ -63,6 +46,26 @@ class translator {
         void set_call_to_jump() { m_opts.call_to_jmp = true; };
         void set_shadow_code(mem_tool* p) { m_opts.shadow_code = p; };
         void set_bbs(std::set<size_t>* p) { m_bbs = p; };
+
+    private:
+        uint8_t* get_inst_ptr();
+        uint32_t get_inst_bytes_left();
+        void adjust_inst_offset(size_t v);
+        void adjust_cov_offset(size_t v);
+
+        void adjust_stack_red_zone();
+        void adjust_stack_red_zone_back();
+        void adjust_stack(int32_t sp_offset);
+
+        void make_pushf();
+        void make_popf();
+        void make_dword_inc_cov_hit();
+        void make_dword_mov_cov_hit();
+
+        void make_jump_to_orig_or_inst(size_t target_addr);
+        uint32_t translate_call_to_jump(
+                dasm::opcode* op, uint8_t* buf, uint32_t buf_size, 
+                size_t target_addr);
 
     private:
         mem_tool*         m_inst_code = NULL;
