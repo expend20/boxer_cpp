@@ -379,6 +379,7 @@ void instrumenter::instrument_module(size_t addr, const char* name)
             PAGE_READWRITE);
     ASSERT(meta_buf);
     auto mem_meta = mem_tool(hproc, meta_buf, meta_buf_size);
+    SAY_INFO("remote cmpcov %p\n", mem_meta.addr_remote());
     m_inst_mods[addr].cmpcov = mem_meta;
 
     // check 2gb limit, for relative data access

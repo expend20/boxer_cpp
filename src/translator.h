@@ -20,7 +20,7 @@ struct translator_opts {
     bool call_to_jmp = false;
     bool cmpcov = true;
     mem_tool* shadow_code = 0;
-    int32_t red_zone_size = 256;
+    int32_t red_zone_size = 0;
 };
 
 class translator {
