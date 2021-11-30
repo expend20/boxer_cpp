@@ -5,16 +5,71 @@
 
 bool g_debug = false;
 
-bool dasm::opcode::is_iclass_jxx() {
+xed_reg_enum_t _regs8[] = {XED_REG_AL, XED_REG_BL, XED_REG_CL, XED_REG_DL,
+    XED_REG_SIL, XED_REG_DIL, XED_REG_BPL, XED_REG_SPL, XED_REG_R8B, XED_REG_R9B,
+    XED_REG_R10B, XED_REG_R11B, XED_REG_R12B, XED_REG_R13B, XED_REG_R14B,
+    XED_REG_R15B};
+xed_reg_enum_t _regs16[] = {XED_REG_AX, XED_REG_BX, XED_REG_CX, XED_REG_DX,
+    XED_REG_SI, XED_REG_DI, XED_REG_BP, XED_REG_SP, XED_REG_R8W, XED_REG_R9W,
+    XED_REG_R10W, XED_REG_R11W, XED_REG_R12W, XED_REG_R13W, XED_REG_R14W,
+    XED_REG_R15W};
+xed_reg_enum_t _regs32[] = {XED_REG_EAX, XED_REG_EBX, XED_REG_ECX, XED_REG_EDX,
+    XED_REG_ESI, XED_REG_EDI, XED_REG_EBP, XED_REG_ESP, XED_REG_R8D, XED_REG_R9D,
+    XED_REG_R10D, XED_REG_R11D, XED_REG_R12D, XED_REG_R13D, XED_REG_R14D,
+    XED_REG_R15D};
+xed_reg_enum_t _regs64[] = {XED_REG_RAX, XED_REG_RBX, XED_REG_RCX, XED_REG_RDX,
+    XED_REG_RSI, XED_REG_RDI, XED_REG_RBP, XED_REG_RSP, XED_REG_R8, XED_REG_R9,
+    XED_REG_R10, XED_REG_R11, XED_REG_R12, XED_REG_R13, XED_REG_R14,
+    XED_REG_R15};
+
+xed_reg_enum_t dasm::opcode::get_reg_from_largest(
+        xed_reg_enum_t reg, uint32_t width){
+    xed_reg_enum_t* target;
+    switch(width) {
+        case 8:
+            target = _regs8;
+            break;
+        case 16:
+            target = _regs16;
+            break;
+        case 32:
+            target = _regs32;
+            break;
+        case 64:
+            target = _regs64;
+            break;
+        default:
+            SAY_FATAL("Unknown width: %d", width);
+            break;
+    }
+    for (uint32_t i = 0; i < sizeof(_regs8); i++) {
+        if (_regs64[i] == reg) return target[i];
+    }
+    return reg;
+}
+
+bool dasm::opcode::is_cond_jump() 
+{
+    if (is_iclass_jxx() && iclass != XED_ICLASS_JMP) {
+        return true;
+    }
+    else {
+        return false;
+    }
+}
+
+bool dasm::opcode::is_iclass_jxx()
+{
     auto res = false;
     switch (iclass) {
+        case XED_ICLASS_JMP:
+
         case XED_ICLASS_JB:
         case XED_ICLASS_JBE:
         case XED_ICLASS_JCXZ:
         case XED_ICLASS_JECXZ:
         case XED_ICLASS_JL:
         case XED_ICLASS_JLE:
-        case XED_ICLASS_JMP:
         case XED_ICLASS_JNB:
         case XED_ICLASS_JNBE:
         case XED_ICLASS_JNL:
@@ -96,17 +151,6 @@ bool dasm::opcode::fix_branch_disp(size_t new_addr){
 bool dasm::opcode::fix_mem_disp(size_t new_addr){
     if (mem_disp_width && reg_base == XED_REG_RIP) {
         auto tgt_addr = addr + mem_disp + size_orig;
-        // NOTE: this is an example of fixing the memory references (not to be 
-        // confused with branch references) to code section. Unfortunately
-        // this ends up by redirecting the execution to that shadow region,
-        // which is not the thing we want to.
-        //if (tgt_addr >= code_sect_orig && 
-        //        tgt_addr < (code_sect_orig + code_sect_size)) {
-        //    if (g_debug)
-        //        SAY_DEBUG("Referenced memory is in code section\n");
-        //    __debugbreak();
-        //    tgt_addr = tgt_addr - code_sect_orig + code_sect_new;
-        //}
         auto new_addr_end = new_addr + (size_new ? size_new : size_orig);
         auto new_mem_disp = tgt_addr -  new_addr_end;
         if (g_debug)
@@ -151,16 +195,6 @@ uint32_t dasm::maker::make(uint8_t* output_data, uint32_t output_size)
                 xed_error_enum_t2str(err));
     }
     return new_len;
-}
-
-dasm::opcode::opcode(size_t data, size_t addr, size_t _code_sect_orig, 
-                size_t _code_sect_new, size_t _code_sect_size):
-    opcode(data, addr)
-{
-    code_sect_orig = _code_sect_orig;
-    code_sect_new = _code_sect_new;
-    code_sect_size = _code_sect_size;
-    ASSERT(code_sect_orig && code_sect_new && code_sect_size);
 }
 
 dasm::opcode::opcode(size_t data, size_t addr_arg) {
@@ -210,27 +244,32 @@ dasm::opcode::opcode(size_t data, size_t addr_arg) {
     mem_disp  = (size_t)xed_decoded_inst_get_memory_displacement(&xedd, 0);
     mem_disp_width = xed_decoded_inst_get_memory_displacement_width(&xedd, 0);
 
-    category      = xed_decoded_inst_get_category(&xedd);
-    xi            = xed_decoded_inst_inst(&xedd);
-    first_op      = xed_inst_operand(xi, 0);
-    first_op_name = xed_operand_name(first_op);
-    reg_index     = xed_decoded_inst_get_index_reg(&xedd, 0);
-    scale         = xed_decoded_inst_get_scale(&xedd, 0);
-    seg_reg       = xed_decoded_inst_get_seg_reg(&xedd, 0);
-    mem_len       = xed_decoded_inst_get_memory_operand_length(&xedd, 0);
-    reg0          = xed_decoded_inst_get_reg(&xedd, XED_OPERAND_REG0);
+    category       = xed_decoded_inst_get_category(&xedd);
+    xi             = xed_decoded_inst_inst(&xedd);
+    first_op       = xed_inst_operand(xi, 0);
+    first_op_name  = xed_operand_name(first_op);
+    second_op      = xed_inst_operand(xi, 1);
+    second_op_name = xed_operand_name(second_op);
+    reg_index      = xed_decoded_inst_get_index_reg(&xedd, 0);
+    scale          = xed_decoded_inst_get_scale(&xedd, 0);
+    seg_reg        = xed_decoded_inst_get_seg_reg(&xedd, 0);
+    mem_len0       = xed_decoded_inst_get_memory_operand_length(&xedd, 0) * 8;
+    mem_len1       = xed_decoded_inst_get_memory_operand_length(&xedd, 1) * 8;
+    reg0           = xed_decoded_inst_get_reg(&xedd, XED_OPERAND_REG0);
+    if (reg0 != XED_REG_INVALID) {
+        reg0_largest = xed_get_largest_enclosing_register(reg0);
+        reg0_smallest = get_reg_from_largest(reg0_largest, 8);
+    }
+    reg1           = xed_decoded_inst_get_reg(&xedd, XED_OPERAND_REG1);
+    if (reg1 != XED_REG_INVALID) {
+        reg1_largest = xed_get_largest_enclosing_register(reg1);
+        reg1_smallest = get_reg_from_largest(reg1_largest, 8);
+    }
+    op_width       = xed_decoded_inst_get_operand_width(&xedd);
+    imm_width      = xed_decoded_inst_get_immediate_width_bits(&xedd);
+    imm            = xed_decoded_inst_get_unsigned_immediate(&xedd);
 
     /*
-       const xed_inst_t* xi = xed_decoded_inst_inst(xedd);
-       xed_uint_t noperands = xed_inst_noperands(xi);
-       const xed_operand_t* firstOperand, * secondOperand;
-       firstOperand = xed_inst_operand(xi, 0);
-       secondOperand = xed_inst_operand(xi, 1);
-       xed_operand_enum_t firstName, secondName;
-       firstName = xed_operand_name(firstOperand);
-       secondName = xed_operand_name(secondOperand);
-       uint32_t memWidth0 = xed_decoded_inst_get_memory_operand_length(xedd, 0);
-       uint32_t memWidth1 = xed_decoded_inst_get_memory_operand_length(xedd, 1);
        uint32_t opWidthBits = xed_decoded_inst_get_operand_width(xedd);
        uint32_t memWidth = memWidth0 >= memWidth1 ? memWidth0 : memWidth1;
        xed_uint_t immWidth = xed_decoded_inst_get_immediate_width(xedd);
@@ -239,78 +278,24 @@ dasm::opcode::opcode(size_t data, size_t addr_arg) {
        xed_reg_enum_t reg1 = xed_decoded_inst_get_reg(xedd, XED_OPERAND_REG1);
        xed_reg_enum_t reg1Largest = xed_get_largest_enclosing_register(reg1);
        xed_reg_enum_t reg1Lowest = GetRegFromLargest(reg1Largest, 1);
-       uint64_t imm = xed_decoded_inst_get_unsigned_immediate(xedd);
        */
-}
-
-dasm::opcode* dasm::cached_code::get(size_t data, size_t addr,
-        size_t code_sect_orig, size_t code_sect_new, size_t code_sect_size) {
-
-    auto r = m_idxes.find(addr);
-    if (r == m_idxes.end()) {
-
-        /*
-         * Add new opcode
-         */
-
-        auto op = opcode(data, addr, code_sect_orig, code_sect_new,
-                code_sect_size);
-        auto idx = m_opcodes.size();
-        m_opcodes.push_back(op);
-        m_idxes[addr] = idx;
-
-        return &m_opcodes[idx];
-
-    } else {
-
-        return &m_opcodes[r->second];
-
-    }
 }
 
 dasm::opcode* dasm::cached_code::get(size_t data, size_t addr) {
 
-    auto r = m_idxes.find(addr);
-    if (r == m_idxes.end()) {
-
-        /*
-         * Add new opcode
-         */
-
-        auto op = opcode(data, addr);
-        auto idx = m_opcodes.size();
-        m_opcodes.push_back(op);
-        m_idxes[addr] = idx;
-
-        return &m_opcodes[idx];
-
-    } else {
-
-        return &m_opcodes[r->second];
-
+    auto el = m_opcodes.find(addr);
+    if (el == m_opcodes.end()) {
+        m_opcodes[addr] = opcode(data, addr);
     }
+    return &m_opcodes[addr];
 }
 
-dasm::opcode* dasm::cached_code::get(size_t ptr) {
+dasm::opcode* dasm::cached_code::get(size_t addr) {
 
-    auto r = m_idxes.find(ptr);
-    if (r == m_idxes.end()) {
-
-        /*
-         * Add new opcode
-         */
-
-        auto op = opcode(ptr);
-        auto idx = m_opcodes.size();
-        m_opcodes.push_back(op);
-        m_idxes[ptr] = idx;
-
-        return &m_opcodes[idx];
-
-    } else {
-
-        return &m_opcodes[r->second];
-
+    auto el = m_opcodes.find(addr);
+    if (el == m_opcodes.end()) {
+        m_opcodes[addr] = opcode(addr);
     }
+    return &m_opcodes[addr];
 }
 

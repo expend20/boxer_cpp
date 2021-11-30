@@ -18,8 +18,9 @@ struct translator_opts {
     bool disasm = false;
     bool single_step = false;
     bool call_to_jmp = false;
+    bool cmpcov = true;
     mem_tool* shadow_code = 0;
-    int32_t red_zone_size = 4;
+    int32_t red_zone_size = 256;
 };
 
 class translator {
@@ -44,14 +45,17 @@ class translator {
         void set_disasm() { m_opts.disasm = true; };
         void set_single_step() { m_opts.single_step = true; };
         void set_call_to_jump() { m_opts.call_to_jmp = true; };
+        void set_cmpcov() { m_opts.cmpcov = true; };
         void set_shadow_code(mem_tool* p) { m_opts.shadow_code = p; };
         void set_bbs(std::set<size_t>* p) { m_bbs = p; };
 
     private:
         uint8_t* get_inst_ptr();
         uint32_t get_inst_bytes_left();
+
         void adjust_inst_offset(size_t v);
         void adjust_cov_offset(size_t v);
+        void adjust_cmpcov_offset(size_t v);
 
         void adjust_stack_red_zone();
         void adjust_stack_red_zone_back();
@@ -63,18 +67,31 @@ class translator {
         void make_dword_mov_cov_hit();
 
         void make_jump_to_orig_or_inst(size_t target_addr);
+
         uint32_t translate_call_to_jump(
                 dasm::opcode* op, uint8_t* buf, uint32_t buf_size, 
                 size_t target_addr);
 
+        void add_cmpcov_inst(dasm::opcode* op);
+        bool is_target_8bits(dasm::opcode* op);
+
+        uint32_t make_op_1(xed_iclass_enum_t iclass, uint32_t bits, 
+                xed_encoder_operand_t op);
+
+        uint32_t make_op_2(xed_iclass_enum_t iclass, uint32_t bits, 
+                xed_encoder_operand_t op1, xed_encoder_operand_t op2);
+
     private:
         mem_tool*         m_inst_code = NULL;
         mem_tool*         m_cov_buf = NULL;
-        mem_tool*         m_metadata = NULL;
+        mem_tool*         m_cmpcov_buf = NULL;
         mem_tool*         m_text_sect = NULL;
+
         size_t            m_inst_offset = 0;
         size_t            m_cov_offset = 0;
+        size_t            m_cmpcov_offset = 0;
         size_t            m_text_sect_remote_addr = 0;
+
         std::set<size_t>* m_bbs = 0;
 
         dasm::cached_code m_dasm_cache;

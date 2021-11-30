@@ -44,7 +44,7 @@ struct instrumenter_module_data {
     mem_tool           shadow;
     mem_tool           inst;
     mem_tool           cov;
-    mem_tool           metadata;
+    mem_tool           cmpcov;
     translator         translator;
 };
 

@@ -7,18 +7,158 @@
 #define XED_REG_PC XED_REG_RIP
 #define XED_REG_PC_INVALID XED_REG_RIP
 #define XED_REG_SP XED_REG_RSP
+#define IF_X64_X86(val64, val32) (val64)
 
 #else
 
 #define XED_REG_PC XED_REG_EIP
 #define XED_REG_PC_INVALID XED_REG_INVALID
 #define XED_REG_SP XED_REG_ESP
+#define IF_X64_X86(val64, val32) (val32)
 
 #endif
 
+uint32_t translator::make_op_1(xed_iclass_enum_t iclass, uint32_t bits, 
+        xed_encoder_operand_t op)
+{
+    auto new_op = dasm::maker();
+    xed_inst1(&new_op.enc_inst, new_op.dstate,
+            iclass, bits, op);                                    
+    auto sz = new_op.make(get_inst_ptr(), get_inst_bytes_left()); 
+    adjust_inst_offset(sz);                                   
+    return sz;
+}
+
+uint32_t translator::make_op_2(xed_iclass_enum_t iclass, uint32_t bits, 
+        xed_encoder_operand_t op1, xed_encoder_operand_t op2)
+{
+    auto new_op = dasm::maker();
+    xed_inst2(&new_op.enc_inst, new_op.dstate,
+            iclass, bits, op1, op2);
+    auto sz = new_op.make(get_inst_ptr(), get_inst_bytes_left()); 
+    adjust_inst_offset(sz);
+    return sz;
+}
+
+bool translator::is_target_8bits(dasm::opcode* op) 
+{
+    auto res = false;
+
+    if (op->imm_width && op->imm_width == 8 || 
+            op->mem_len0 && op->mem_len0 == 8 ||
+            op->op_width && op->op_width == 8) {
+        res = true;
+    }
+    return res;
+}
+
+void translator::add_cmpcov_inst(dasm::opcode* op) 
+{
+    // TODO: if add/sub, shouldn't we compare the result of addition/subraction?
+    // TODO: use test opcode for test opcodes
+    size_t entry_offset = m_inst_offset;
+    auto should_break = false;
+    // check if mem width is more than 8 bytes
+    //SAY_INFO("mem len %d %d, imm width %d, op width %d\n", 
+    //        op->mem_len0, op->mem_len1,
+    //        op->imm_width,
+    //        op->op_width);
+
+    // skip single bytes comparisons
+    if (is_target_8bits(op)) return;
+
+    // it sould be `cmp [mem], reg` not `cmp reg, [mem]`
+    ASSERT(op->mem_len1 == 0);
+
+    adjust_stack_red_zone();
+
+    if (op->first_op_name == XED_OPERAND_REG0 &&
+            op->second_op_name == XED_OPERAND_IMM0){
+        // cmp edx, 0x31333337
+        uint32_t loop_len = op->imm_width / 8;
+        //SAY_INFO("loop %d, largets %s, lowest %s\n", loop_len, 
+        //        xed_reg_enum_t2str(op->reg0_largest),
+        //        xed_reg_enum_t2str(op->reg0_smallest));
+
+        // push reg0
+        make_op_1(XED_ICLASS_PUSH, 64, xed_reg(op->reg0_largest));
+        //for (uint32_t i = 0; i < loop_len; i++) {
+        //    uint8_t curr_cmp_imm = (op->imm >> (i * 8)) & 0xff;
+        //    uint32_t shr_sz = 4;
+        //    uint32_t jnz_sz = 2;
+        //    uint32_t or_sz = 7;
+
+        //    if (i) {
+        //        auto new_shr_sz = make_op_2(XED_ICLASS_SHR, sizeof(size_t)*8, 
+        //                xed_reg(op->reg0_largest),
+        //                xed_imm0(8, 8));
+        //        ASSERT(new_shr_sz == shr_sz);
+        //    }
+        //    // cmp/test reg, imm. Size may vary
+        //    auto cmp_sz = make_op_2(op->iclass, op->op_width, 
+        //            xed_reg(op->reg0_smallest), 
+        //            xed_imm0(curr_cmp_imm, 8));
+        //    
+        //    uint32_t full_sz = or_sz + shr_sz + cmp_sz + jnz_sz;
+        //    uint32_t relbr = 0;
+        //    if (i == loop_len - 1) {
+        //        relbr = or_sz;
+        //    } else {
+        //        relbr = full_sz * (loop_len - 1 - i) + or_sz;
+        //    }
+        //    uint32_t new_jnz_sz = make_op_1(XED_ICLASS_JNZ, 8, 
+        //            xed_relbr(relbr, 8));
+        //    ASSERT(new_jnz_sz == jnz_sz);
+        //    ASSERT(relbr <= 255);
+
+        //    size_t tgt_addr = m_cmpcov_offset + m_cmpcov_buf->addr_remote();
+        //    size_t inst_end = (size_t)get_inst_ptr() + or_sz;
+        //    uint32_t disp = tgt_addr - inst_end;
+
+        //    auto new_or_sz = make_op_2(XED_ICLASS_OR, 8, 
+        //            xed_mem_bd(XED_REG_PC_INVALID, xed_disp(disp, 32), 32),
+        //            xed_imm0(1 << i, 8));
+        //    ASSERT(new_or_sz == or_sz);
+        //}
+        // pop reg0
+        //should_break = true;
+        //make_op_1(XED_ICLASS_POP, 64, xed_reg(op->reg0_largest));
+    }
+    else if (op->first_op_name == XED_OPERAND_REG0 &&
+            op->second_op_name == XED_OPERAND_REG1) {
+        // cmp rax, rcx
+    }
+    else if (op->first_op_name == XED_OPERAND_MEM0 &&
+            op->second_op_name == XED_OPERAND_IMM0){
+        // cmp dword ptr [rbx], 0x46464952
+    }
+    else if ((op->first_op_name == XED_OPERAND_MEM0 &&
+            op->second_op_name == XED_OPERAND_REG0) || 
+            (op->first_op_name == XED_OPERAND_REG0 &&
+             op->second_op_name == XED_OPERAND_MEM0)){
+        // cmp qword ptr [rbx], rdi
+    }
+    else {
+        SAY_INFO("Not covered ^\n"); exit(-1);
+    }
+
+    adjust_stack_red_zone_back();
+
+    adjust_cmpcov_offset(1);
+
+    //ASSERT(m_inst_offset - entry_offset >= 5); // to place jump
+    if (should_break) __debugbreak();
+}
+
+void translator::adjust_cmpcov_offset(size_t v)
+{
+    m_cmpcov_offset += v;
+    ASSERT(m_cmpcov_offset <= m_cmpcov_buf->size());
+}
+
 void translator::adjust_cov_offset(size_t v)
 {
-    m_cov_offset += 4;
+    m_cov_offset += v;
     ASSERT(m_cov_offset <= m_cov_buf->size());
 }
 
@@ -454,8 +594,8 @@ size_t translator::translate(size_t addr,
             SAY_DEBUG("Disasm (%x) local: %p remote: %p text sect remote: "
                     "%p\n", 
                     offset, local_addr, rip, m_text_sect_remote_addr);
-        auto op = m_dasm_cache.get(local_addr, rip, m_text_sect_remote_addr,
-                m_text_sect->addr_remote(), m_text_sect->size());
+
+        auto op = m_dasm_cache.get(local_addr, rip);
 
         if (m_opts.disasm || m_opts.debug)
         {
@@ -474,6 +614,29 @@ size_t translator::translate(size_t addr,
 
         orig_size += op->size_orig;
 
+        if (m_opts.cmpcov) {
+            bool should_add_cmp_inst = false;
+
+            // TODO:
+            if (op->iclass == XED_ICLASS_ADD ||
+                    op->iclass == XED_ICLASS_SUB ||
+                    op->iclass == XED_ICLASS_XOR) {
+                auto op_next = m_dasm_cache.get(local_addr + op->size_orig,
+                        rip + op->size_orig);
+                if (op_next->is_cond_jump()) {
+                    should_add_cmp_inst = true;
+                }
+            }
+            if (op->iclass == XED_ICLASS_CMP ||
+                    op->iclass == XED_ICLASS_TEST) {
+                should_add_cmp_inst = true;
+            }
+
+            if (should_add_cmp_inst) {
+                add_cmpcov_inst(op);
+            }
+        }
+
         uint32_t inst_sz = 0;
         if (m_opts.call_to_jmp &&
             op->category == XED_CATEGORY_CALL) {
@@ -491,7 +654,7 @@ size_t translator::translate(size_t addr,
         inst_count += 1;
 
         if (op->branch_disp_width) {
-            // keep track of jumps, while them are not poiting to the 
+            // keep track of jumps, while they are not poiting to the 
             // instrumented code
             m_remote_dd_refs.insert(
                     m_inst_code->addr_remote() + m_inst_offset - 4);
@@ -555,18 +718,18 @@ size_t translator::translate(size_t addr,
 
 translator::translator(mem_tool* inst_code, 
         mem_tool* cov_buf, 
-        mem_tool* metadata,
+        mem_tool* cmpcov_buf,
         mem_tool* text_sect,
         size_t text_sect_remote_addr):
     m_inst_code(inst_code),
     m_cov_buf(cov_buf),
-    m_metadata(metadata),
+    m_cmpcov_buf(cmpcov_buf),
     m_text_sect(text_sect),
     m_text_sect_remote_addr(text_sect_remote_addr)
 {
     ASSERT(m_inst_code);
     ASSERT(m_cov_buf);
-    ASSERT(m_metadata);
+    ASSERT(m_cmpcov_buf);
     ASSERT(m_text_sect);
 }
 

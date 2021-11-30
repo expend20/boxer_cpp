@@ -35,7 +35,11 @@ namespace dasm {
         size_t              mem_disp = 0;
         uint32_t            mem_disp_width = 0;
         uint8_t             mem_ops_num = 0;
-        uint32_t            mem_len = 0;
+        uint32_t            mem_len0 = 0;
+        uint32_t            mem_len1 = 0;
+        uint32_t            imm = 0;
+        uint32_t            imm_width = 0;
+        uint32_t            op_width = 0;
         size_t              branch_disp = 0;
         uint32_t            branch_disp_width = 0;
         uint32_t            size_new = 0;
@@ -44,28 +48,29 @@ namespace dasm {
         uint32_t            scale = 0;
         uint8_t             opcode_data[DASM_MAX_OPCODE_LEN];
 
-        size_t              code_sect_orig = 0;
-        size_t              code_sect_new = 0;
-        size_t              code_sect_size = 0;
-
         xed_reg_enum_t      reg_base = XED_REG_INVALID;
         xed_reg_enum_t      reg_index = XED_REG_INVALID;
         xed_reg_enum_t      reg0 = XED_REG_INVALID;
+        xed_reg_enum_t      reg1 = XED_REG_INVALID;
+        xed_reg_enum_t      reg0_largest = XED_REG_INVALID;
+        xed_reg_enum_t      reg0_smallest = XED_REG_INVALID;
+        xed_reg_enum_t      reg1_largest = XED_REG_INVALID;
+        xed_reg_enum_t      reg1_smallest = XED_REG_INVALID;
         xed_reg_enum_t      seg_reg = XED_REG_INVALID;
         xed_category_enum_t category = XED_CATEGORY_INVALID;
         xed_operand_enum_t  first_op_name = XED_OPERAND_INVALID;
+        xed_operand_enum_t  second_op_name = XED_OPERAND_INVALID;
 
         xed_decoded_inst_t  xedd;
         const xed_inst_t*        xi = NULL;
         const xed_operand_t*     first_op = NULL;
+        const xed_operand_t*     second_op = NULL;
 
         /*
          * Simplest ctor provide only data and VA
          */
         opcode(){};
         opcode(size_t data, size_t addr = 0);
-        opcode(size_t data, size_t addr, size_t code_sect_orig, 
-                size_t code_sect_new, size_t code_sect_size);
 
         uint8_t* rebuild();
         uint32_t rebuild_to_new_addr(
@@ -76,6 +81,9 @@ namespace dasm {
         bool fix_branch_disp(size_t new_addr);
         bool fix_mem_disp(size_t new_addr);
         bool is_iclass_jxx();
+        bool is_cond_jump();
+        static xed_reg_enum_t get_reg_from_largest(
+                xed_reg_enum_t reg, uint32_t width);
 
     };
 
@@ -96,25 +104,21 @@ namespace dasm {
              */
             opcode* get(size_t ptr);
             opcode* get(size_t data, size_t addr);
-            opcode* get(size_t data, size_t addr, size_t code_sect_orig,
-                    size_t code_sect_new, size_t code_sect_size);
 
             /*
              * Cleans all the resources
              */
             void clean() {
-                m_idxes.clear();
                 m_opcodes.clear();
             }; 
 
             void invalidate(size_t ptr) {
-                m_idxes.erase(ptr);
+                m_opcodes.erase(ptr);
             }
 
         private:
 
-            std::map<size_t, size_t> m_idxes;
-            std::vector<opcode>      m_opcodes;
+            std::map<size_t, opcode>      m_opcodes;
 
 
     };

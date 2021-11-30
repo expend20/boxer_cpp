@@ -65,8 +65,8 @@ void instrumenter::translate_all_bbs()
 
             // NOTE: restoring the orig data, could be a solution
             // if we decide skip bbs 
-            m_stats.bb_skipped++;
             if (m_opts.skip_small_bb) {
+                m_stats.bb_skipped++;
                 //SAY_INFO("skipping bb cov at %p...\n", addr);
                 auto offset = addr - code_sect_remote;
                 //SAY_INFO("restoring orig: %p %p %x\n",
@@ -379,14 +379,14 @@ void instrumenter::instrument_module(size_t addr, const char* name)
             PAGE_READWRITE);
     ASSERT(meta_buf);
     auto mem_meta = mem_tool(hproc, meta_buf, meta_buf_size);
-    m_inst_mods[addr].metadata = mem_meta;
+    m_inst_mods[addr].cmpcov = mem_meta;
 
     // check 2gb limit, for relative data access
     ASSERT((meta_buf + meta_buf_size) - addr < 0x7fffffff);
 
     auto trans = translator(&m_inst_mods[addr].inst,
             &m_inst_mods[addr].cov,
-            &m_inst_mods[addr].metadata,
+            &m_inst_mods[addr].cmpcov,
             &code_section->data,
             code_section->data.addr_remote());
 
@@ -747,7 +747,7 @@ void instrumenter::uninstrument(size_t addr)
     }
     r = VirtualFreeEx(proc, (void*)data.cov.addr_remote(), 0, MEM_RELEASE);
     ASSERT(r);
-    r = VirtualFreeEx(proc, (void*)data.metadata.addr_remote(), 0, 
+    r = VirtualFreeEx(proc, (void*)data.cmpcov.addr_remote(), 0, 
             MEM_RELEASE);
     ASSERT(r);
     m_inst_mods.erase(it);
