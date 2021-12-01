@@ -72,7 +72,7 @@ class translator {
                 dasm::opcode* op, uint8_t* buf, uint32_t buf_size, 
                 size_t target_addr);
 
-        void add_cmpcov_inst(dasm::opcode* op);
+        void add_cmpcov_inst(size_t addr, dasm::opcode* op);
         bool is_target_8bits(dasm::opcode* op);
 
         uint32_t make_op_1(xed_iclass_enum_t iclass, uint32_t bits, 

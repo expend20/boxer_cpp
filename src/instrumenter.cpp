@@ -150,6 +150,7 @@ void instrumenter::redirect_execution(size_t addr, size_t inst_addr)
         tools::update_thread_rip(hThread, inst_addr);
     }
     else {
+        ASSERT(m_ctx);
 #ifdef _WIN64
         if (m_ctx->Rip - addr > 1)
             SAY_FATAL("Weird pc / exception address: %p / %p\n", m_ctx->Rip,
