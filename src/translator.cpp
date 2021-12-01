@@ -58,6 +58,7 @@ void translator::add_cmpcov_inst(size_t addr, dasm::opcode* op)
 {
     // TODO: if add/sub, shouldn't we compare the result of addition/subraction?
     // TODO: use test opcode for test opcodes
+
     size_t entry_offset = m_inst_offset;
     auto should_break = false;
     // skip single bytes comparisons
@@ -109,15 +110,11 @@ void translator::add_cmpcov_inst(size_t addr, dasm::opcode* op)
             uint32_t new_jnz_sz = make_op_1(XED_ICLASS_JNZ, 32, 
                     xed_relbr(relbr, 32));
             ASSERT(new_jnz_sz == jnz_sz);
-            ASSERT(relbr <= 255);
 
             size_t tgt_addr = m_cmpcov_offset + m_cmpcov_buf->addr_remote();
             size_t inst_end = (size_t)m_inst_code->addr_remote() +
                 m_inst_offset + or_sz;
             uint32_t disp = tgt_addr - inst_end;
-            //SAY_INFO("tgt %p, inst_end %p, base %p, offset %x, disp %x\n",
-            //        tgt_addr, inst_end, m_cmpcov_buf->addr_remote(), 
-            //        m_cmpcov_offset, disp);
 
             auto new_or_sz = make_op_2(XED_ICLASS_OR, 8, 
                     xed_mem_bd(XED_REG_PC_INVALID, xed_disp(disp, 32), 8),
@@ -164,15 +161,11 @@ void translator::add_cmpcov_inst(size_t addr, dasm::opcode* op)
             uint32_t new_jnz_sz = make_op_1(XED_ICLASS_JNZ, 32, 
                     xed_relbr(relbr, 32));
             ASSERT(new_jnz_sz == jnz_sz);
-            ASSERT(relbr <= 255);
 
             size_t tgt_addr = m_cmpcov_offset + m_cmpcov_buf->addr_remote();
             size_t inst_end = (size_t)m_inst_code->addr_remote() +
                 m_inst_offset + or_sz;
             uint32_t disp = tgt_addr - inst_end;
-            //SAY_INFO("tgt %p, inst_end %p, base %p, offset %x, disp %x\n",
-            //        tgt_addr, inst_end, m_cmpcov_buf->addr_remote(), 
-            //        m_cmpcov_offset, disp);
 
             auto new_or_sz = make_op_2(XED_ICLASS_OR, 8, 
                     xed_mem_bd(XED_REG_PC_INVALID, xed_disp(disp, 32), 8),
@@ -250,15 +243,11 @@ void translator::add_cmpcov_inst(size_t addr, dasm::opcode* op)
             uint32_t new_jnz_sz = make_op_1(XED_ICLASS_JNZ, 32, 
                     xed_relbr(relbr, 32));
             ASSERT(new_jnz_sz == jnz_sz);
-            ASSERT(relbr <= 255);
 
             size_t tgt_addr = m_cmpcov_offset + m_cmpcov_buf->addr_remote();
             size_t inst_end = (size_t)m_inst_code->addr_remote() +
                 m_inst_offset + or_sz;
             uint32_t disp = tgt_addr - inst_end;
-            //SAY_INFO("tgt %p, inst_end %p, base %p, offset %x, disp %x\n",
-            //        tgt_addr, inst_end, m_cmpcov_buf->addr_remote(), 
-            //        m_cmpcov_offset, disp);
 
             auto new_or_sz = make_op_2(XED_ICLASS_OR, 8, 
                     xed_mem_bd(XED_REG_PC_INVALID, xed_disp(disp, 32), 8),
@@ -272,22 +261,104 @@ void translator::add_cmpcov_inst(size_t addr, dasm::opcode* op)
             op->second_op_name == XED_OPERAND_REG0) || 
             (op->first_op_name == XED_OPERAND_REG0 &&
              op->second_op_name == XED_OPERAND_MEM0)){
-        // cmp qword ptr [rbx], rdi
-        //SAY_INFO("mem len %d %d, imm width %d, op width %d\n", 
-        //        op->mem_len0, op->mem_len1,
-        //        op->imm_width,
-        //        op->op_width);
 
+        // cmp qword ptr [rbx], rdi
+        ASSERT(op->mem_len0 == op->op_width);
+
+        uint32_t loop_len = op->mem_len0 / 8;
+
+        auto prop_reg_largest = dasm::opcode::get_reg_except_this_list(
+                &op->reg0_largest, 1);
+        auto prop_reg = 
+            dasm::opcode::get_reg_from_largest(prop_reg_largest, op->mem_len0);
+        auto prop_reg_smallest = 
+            dasm::opcode::get_reg_from_largest(prop_reg_largest, 8);
+
+        make_op_1(XED_ICLASS_PUSH, 64, xed_reg(op->reg0_largest));
+        make_op_1(XED_ICLASS_PUSH, 64, xed_reg(prop_reg_largest));
+
+        uint32_t mem_disp = op->mem_disp;
+
+        // just get size in PC case
+        auto inst_offset_bak = m_inst_offset;
+        auto mov_sz = make_op_2(XED_ICLASS_MOV, op->op_width,
+                xed_reg(prop_reg), 
+                xed_mem_bisd(op->reg_base, 
+                    op->reg_index, 
+                    op->scale,
+                    xed_disp(mem_disp,
+                        op->mem_disp_width * 8),
+                    op->op_width));
+            
+        // adjust disp & size in PC case
+        if (op->reg_base == XED_REG_RIP ||
+                op->reg_base == XED_REG_EIP) {
+            m_inst_offset = inst_offset_bak; // restore pointer
+            size_t tgt_addr = addr + op->size_orig + op->mem_disp;
+            size_t inst_end = (size_t)m_inst_code->addr_remote() +
+                m_inst_offset + mov_sz;
+            mem_disp = tgt_addr - inst_end;
+            mov_sz = make_op_2(XED_ICLASS_MOV, op->op_width,
+                    xed_reg(prop_reg), 
+                    xed_mem_bisd(op->reg_base, 
+                        op->reg_index, 
+                        op->scale,
+                        xed_disp(mem_disp, 
+                            op->mem_disp_width * 8), 
+                        op->op_width));
+        }
+
+        for (uint32_t i = 0; i < loop_len; i++) {
+
+            if (i) {
+                auto new_shr_sz = make_op_2(XED_ICLASS_SHR, sizeof(size_t)*8, 
+                        xed_reg(prop_reg_largest),
+                        xed_imm0(8, 8));
+                ASSERT(new_shr_sz == shr_reg_sz);
+                new_shr_sz = make_op_2(XED_ICLASS_SHR, sizeof(size_t)*8, 
+                        xed_reg(op->reg0_largest),
+                        xed_imm0(8, 8));
+                ASSERT(new_shr_sz == shr_reg_sz);
+            }
+            // cmp/test reg, imm. Size may vary
+            auto cmp_sz = make_op_2(op->iclass, 8, 
+                    xed_reg(op->reg0_smallest), 
+                    xed_reg(prop_reg_smallest));
+            
+            uint32_t full_sz = or_sz + shr_reg_sz * 2 + cmp_sz + jnz_sz;
+            uint32_t relbr = 0;
+            if (i == loop_len - 1) {
+                relbr = or_sz;
+            } else {
+                relbr = full_sz * (loop_len - (i + 1)) + or_sz;
+            }
+            uint32_t new_jnz_sz = make_op_1(XED_ICLASS_JNZ, 32, 
+                    xed_relbr(relbr, 32));
+            ASSERT(new_jnz_sz == jnz_sz);
+
+            size_t tgt_addr = m_cmpcov_offset + m_cmpcov_buf->addr_remote();
+            size_t inst_end = (size_t)m_inst_code->addr_remote() +
+                m_inst_offset + or_sz;
+            uint32_t disp = tgt_addr - inst_end;
+
+            auto new_or_sz = make_op_2(XED_ICLASS_OR, 8, 
+                    xed_mem_bd(XED_REG_PC_INVALID, xed_disp(disp, 32), 8),
+                    xed_imm0(1 << i, 8));
+            ASSERT(new_or_sz == or_sz);
+        }
+
+        make_op_1(XED_ICLASS_POP, 64, xed_reg(prop_reg_largest));
+        make_op_1(XED_ICLASS_POP, 64, xed_reg(op->reg0_largest));
     }
     else {
-        SAY_FATAL("Not covered ^\n"); exit(-1);
+        SAY_FATAL("Cmp type not covered ^\n"); exit(-1);
     }
 
     adjust_stack_red_zone_back();
 
     adjust_cmpcov_offset(1);
 
-    //ASSERT(m_inst_offset - entry_offset >= 5); // to place jump
+    ASSERT(m_inst_offset - entry_offset >= 5); // to place jump
     if (should_break) __debugbreak();
 }
 
@@ -709,9 +780,9 @@ size_t translator::translate(size_t addr,
     size_t inst_count = 0;
     uint32_t orig_size = 0;
     while(1) {
-        auto remote_inst = m_inst_code->addr_remote() + m_inst_offset;
         // should instrument instruction
         if (!bb_start) {
+            auto remote_inst = m_inst_code->addr_remote() + m_inst_offset;
             bb_start = remote_inst;
             m_remote_orig_to_inst_bb[rip] = remote_inst;
             if (m_opts.debug)
@@ -743,7 +814,7 @@ size_t translator::translate(size_t addr,
                     sizeof(buf), 0, 0, 0);
             SAY_INFO("%p %p %-30s (Category: %s, iclass: %s)\n",
                     rip, 
-                    remote_inst,
+                    m_inst_code->addr_remote() + m_inst_offset,
                     buf,
                     xed_category_enum_t2str(op->category),
                     xed_iclass_enum_t2str(op->iclass));
@@ -783,7 +854,7 @@ size_t translator::translate(size_t addr,
         else {
             inst_sz = op->rebuild_to_new_addr(get_inst_ptr(),
                     get_inst_bytes_left(), 
-                    remote_inst);
+                    m_inst_code->addr_remote() + m_inst_offset);
         }
         ASSERT(inst_sz);
 

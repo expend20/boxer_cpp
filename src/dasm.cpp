@@ -3,7 +3,7 @@
 
 #define OPCODE_MAX_LEN 0x20
 
-bool g_debug = false;
+bool g_debug = true;
 
 xed_reg_enum_t _regs8[] = {XED_REG_AL, XED_REG_BL, XED_REG_CL, XED_REG_DL,
     XED_REG_SIL, XED_REG_DIL, XED_REG_BPL, XED_REG_SPL, XED_REG_R8B, XED_REG_R9B,
@@ -46,6 +46,33 @@ xed_reg_enum_t dasm::opcode::get_reg_from_largest(
         if (_regs64[i] == reg) return target[i];
     }
     return reg;
+}
+
+xed_reg_enum_t dasm::opcode::get_reg_except_this_list(
+        xed_reg_enum_t* reg_buf, // should be largest ones
+        uint32_t reg_buf_count){
+    xed_reg_enum_t allowed_reg_w8[] = {
+        XED_REG_RAX, XED_REG_RBX, XED_REG_RCX, XED_REG_RDX,
+        XED_REG_RSI, XED_REG_RDI, /*XED_REG_RBP, XED_REG_RSP,*/ 
+        XED_REG_R8, XED_REG_R9, XED_REG_R10, XED_REG_R11, XED_REG_R12,
+        XED_REG_R13, XED_REG_R14, XED_REG_R15};
+
+    ASSERT(reg_buf);
+    ASSERT(reg_buf_count);
+
+    for (size_t i = 0; i < sizeof(allowed_reg_w8); i++) {
+        bool is_found = false;
+        for (size_t j = 0; j < reg_buf_count; j++) {
+            if (allowed_reg_w8[i] == reg_buf[j]) {
+                is_found = true;
+                break;
+            }
+        }
+        if (!is_found) return allowed_reg_w8[i];
+    }
+
+    SAY_FATAL("can't find proper register");
+    return (xed_reg_enum_t)-1;
 }
 
 bool dasm::opcode::is_cond_jump() 
