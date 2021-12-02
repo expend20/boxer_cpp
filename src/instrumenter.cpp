@@ -56,8 +56,14 @@ void instrumenter::translate_all_bbs()
         uint32_t inst_size = 0;
         uint32_t orig_size = 0;
         auto inst_addr = trans->translate(addr, &inst_size, &orig_size);
-        m_stats.translator_called++;
         ASSERT(inst_addr);
+        if (orig_size < 2) {
+            m_stats.bb_skipped_less_2++;
+        }
+        else if (orig_size < 5) {
+            m_stats.bb_skipped_less_5++;
+        }
+
         if (orig_size < 5) {
             //SAY_ERROR("BB at %p has size %d (inst %d), we need at "
             //        "least 5 to make jump\n", 
@@ -66,7 +72,6 @@ void instrumenter::translate_all_bbs()
             // NOTE: restoring the orig data, could be a solution
             // if we decide skip bbs 
             if (m_opts.skip_small_bb) {
-                m_stats.bb_skipped++;
                 //SAY_INFO("skipping bb cov at %p...\n", addr);
                 auto offset = addr - code_sect_remote;
                 //SAY_INFO("restoring orig: %p %p %x\n",
@@ -77,10 +82,9 @@ void instrumenter::translate_all_bbs()
                         (void*)(shadow_sect_local + offset),
                         orig_size);
             }
-            //if (orig_size < 2) 
-            //    SAY_WARN("BB at %p has size %d (inst %d), is 1 byte"
-            //            "long\n",
-            //            addr, inst_size, orig_size);
+            //SAY_WARN("BB at %p has size %d (inst %d), is 1 byte"
+            //        "long\n",
+            //        addr, inst_size, orig_size);
         }
         else {
             // Place jump
@@ -183,8 +187,6 @@ bool instrumenter::translate_or_redirect(size_t addr)
 
     size_t inst_addr = trans->remote_orig_to_inst_bb(addr);
     if (!inst_addr) { 
-        m_stats.translator_called++;
-
         m_inst_mods[mod_base].inst.begin();
 
         if (m_opts.debug) 
@@ -199,6 +201,12 @@ bool instrumenter::translate_or_redirect(size_t addr)
         if (m_opts.is_bbs_inst ||
                 m_opts.is_int3_inst_blind) {
 
+            if (orig_size < 5) {
+                m_stats.bb_skipped_less_5++;
+            } else if (orig_size < 2) {
+                m_stats.bb_skipped_less_2++;
+            }
+
             code_sect->data.begin();
             if (orig_size < 5) {
                 //SAY_ERROR("BB at %p has size %d (inst %d), we need at "
@@ -207,7 +215,6 @@ bool instrumenter::translate_or_redirect(size_t addr)
 
                 // NOTE: restoring the orig data, could be a solution
                 // if we decide skip bbs 
-                m_stats.bb_skipped++;
                 if (m_opts.skip_small_bb && 
                         m_inst_mods[mod_base].shadow.size()
                    ) {
@@ -530,23 +537,31 @@ DWORD instrumenter::handle_exception(EXCEPTION_DEBUG_INFO* dbg_info)
 
 void instrumenter::print_stats() 
 {
+    translator_stats cs = {0};
+    for (auto &[addr, data]: m_inst_mods) {
+        auto s = data.translator.get_stats();
+        cs.cmpcov_cmp += s->cmpcov_cmp;
+        cs.cmpcov_sub += s->cmpcov_sub;
+        cs.cmpcov_test += s->cmpcov_test;
+        cs.translated_bbs += s->translated_bbs;
+    }
     SAY_INFO("Instrumenter stats: \n"
-            "%20d dbg callbacks\n"
-            "%20d veh callbacks\n"
-            "%20d exceptions\n"
-            "%20d breakpoints\n"
-            "%20d avs\n"
-            "%20d translator_called\n"
-            "%20d rip_redirections\n"
-            "%20d bb_skipped\n",
-            m_stats.dbg_callbacks,
-            m_stats.veh_callbacks,
-            m_stats.exceptions,
-            m_stats.breakpoints,
-            m_stats.avs,
-            m_stats.translator_called,
+            "\t %d modules, callbacks [ %d dbg | %d veh ] "
+            "[ %d exceptions | %d avs | %d breakpoints ] \n"
+            "\t %d pc redirections\n"
+
+            "\t %d translated bb, skipped [ %d <5 | %d <2 ] \n"
+            "\t %d cmpcov [ %d cmp | %d test | %d sub ]\n",
+
+            m_inst_mods.size(), m_stats.dbg_callbacks, m_stats.veh_callbacks,
+            m_stats.exceptions, m_stats.breakpoints, m_stats.avs,
             m_stats.rip_redirections,
-            m_stats.bb_skipped
+
+            cs.translated_bbs,
+            m_stats.bb_skipped_less_5, m_stats.bb_skipped_less_2,
+
+            cs.cmpcov_cmp + cs.cmpcov_sub + cs.cmpcov_test,
+            cs.cmpcov_cmp, cs.cmpcov_sub, cs.cmpcov_test
             );
 }
 DWORD instrumenter::handle_veh(_EXCEPTION_POINTERS* ex_info) {

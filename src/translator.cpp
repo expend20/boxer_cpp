@@ -61,8 +61,6 @@ void translator::add_cmpcov_inst(size_t addr, dasm::opcode* op)
 
     size_t entry_offset = m_inst_offset;
     auto should_break = false;
-    // skip single bytes comparisons
-    if (is_target_8bits(op)) return;
 
     // it sould be `cmp [mem], reg` not `cmp reg, [mem]`
     ASSERT(op->mem_len1 == 0);
@@ -774,6 +772,7 @@ size_t translator::translate(size_t addr,
         one_time_init = true;
     }
 
+    m_stats.translated_bbs++;
     auto rip = addr;
     size_t bb_start = 0;
     size_t inst_start_offset = m_inst_offset;
@@ -821,22 +820,32 @@ size_t translator::translate(size_t addr,
         }
 
         orig_size += op->size_orig;
-
-        if (m_opts.cmpcov) {
+        if (m_opts.cmpcov && 
+                !is_target_8bits(op)) // skip single bytes comparisons
+        {
             bool should_add_cmp_inst = false;
 
             // TODO:
-            if (op->iclass == XED_ICLASS_ADD ||
-                    op->iclass == XED_ICLASS_SUB ||
-                    op->iclass == XED_ICLASS_XOR) {
+            if (//op->iclass == XED_ICLASS_ADD ||
+                    // op->iclass == XED_ICLASS_XOR ||
+                    op->iclass == XED_ICLASS_SUB
+                    ) {
                 auto op_next = m_dasm_cache.get(local_addr + op->size_orig,
                         rip + op->size_orig);
                 if (op_next->is_cond_jump()) {
-                    //should_add_cmp_inst = true;
+
+                    if (op->iclass == XED_ICLASS_SUB) m_stats.cmpcov_sub++;
+
+                    should_add_cmp_inst = true;
                 }
             }
-            if (op->iclass == XED_ICLASS_CMP ||
-                    op->iclass == XED_ICLASS_TEST) {
+            if (op->iclass == XED_ICLASS_CMP) {
+                m_stats.cmpcov_cmp++;
+                should_add_cmp_inst = true;
+            }
+
+            if (op->iclass == XED_ICLASS_TEST) {
+                m_stats.cmpcov_test++;
                 should_add_cmp_inst = true;
             }
 

@@ -16,9 +16,9 @@ struct instrumenter_stats {
     size_t exceptions = 0;
     size_t breakpoints = 0;
     size_t avs = 0;
-    size_t translator_called = 0;
     size_t rip_redirections = 0;
-    size_t bb_skipped = 0;
+    size_t bb_skipped_less_5 = 0;
+    size_t bb_skipped_less_2 = 0;
 };
 
 struct instrumenter_options {

@@ -23,6 +23,13 @@ struct translator_opts {
     int32_t red_zone_size = 0;
 };
 
+struct translator_stats {
+    size_t cmpcov_cmp = 0;
+    size_t cmpcov_sub = 0;
+    size_t cmpcov_test = 0;
+    size_t translated_bbs = 0;
+};
+
 class translator {
 
     public:
@@ -48,6 +55,8 @@ class translator {
         void set_cmpcov() { m_opts.cmpcov = true; };
         void set_shadow_code(mem_tool* p) { m_opts.shadow_code = p; };
         void set_bbs(std::set<size_t>* p) { m_bbs = p; };
+
+        translator_stats* get_stats() { return &m_stats; };
 
     private:
         uint8_t* get_inst_ptr();
@@ -96,6 +105,7 @@ class translator {
 
         dasm::cached_code m_dasm_cache;
         translator_opts   m_opts;
+        translator_stats  m_stats;
 
         // Remote origin RIP to remote instrumented code
         std::map<size_t, size_t> m_remote_orig_to_inst_bb;
