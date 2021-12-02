@@ -51,46 +51,90 @@ void instrumenter::translate_all_bbs()
     auto shadow_sect_local = shadow_sect->addr_loc_raw();
 
     translator* trans = &m_inst_mods[mod_base].translator;
+
+    uint32_t prev_vec_size = 20;
+    std::vector<size_t> prev_addrs;
+
     for (auto &addr: m_bbs) {
 
         uint32_t inst_size = 0;
         uint32_t orig_size = 0;
         auto inst_addr = trans->translate(addr, &inst_size, &orig_size);
         ASSERT(inst_addr);
-        if (orig_size < 2) {
-            m_stats.bb_skipped_less_2++;
-        }
-        else if (orig_size < 5) {
-            m_stats.bb_skipped_less_5++;
-        }
 
-        if (orig_size < 5) {
-            //SAY_ERROR("BB at %p has size %d (inst %d), we need at "
-            //        "least 5 to make jump\n", 
-            //        addr, orig_size, inst_size);
+        if (orig_size >= 5) {
+            // Place jump
+            auto jump_size = trans->make_jump_from_orig_to_inst(
+                    addr, inst_addr);
+            m_bytes_taken[addr] = jump_size;
+            //SAY_INFO("taken %p %d\n", addr, jump_size);
 
-            // NOTE: restoring the orig data, could be a solution
-            // if we decide skip bbs 
-            if (m_opts.skip_small_bb) {
-                //SAY_INFO("skipping bb cov at %p...\n", addr);
+        } else if (orig_size < 5 && orig_size >= 2) {
+            // TODO: go forward too, not only backwards
+            // TODO: search at the end of the region, not at the beginning
+            // we can try to place short 2 byte jump up to 128 bytes back
+
+            size_t five_byte_ptr = 0;
+            size_t prev_loc = addr;
+            for (int i = prev_addrs.size() - 1; i > 0; i--) {
+                size_t a = prev_addrs[i];
+                size_t a_size = m_bytes_taken[prev_addrs[i]];
+                SAY_INFO("prev: %p size %x cap %x end %p  next %p dist %d\n",
+                        a, a_size,
+                        prev_loc - (a + a_size),
+                        a + a_size + 5, 
+                        prev_loc,
+                        (addr + 2) - (a + a_size));
+                
+                if (a + a_size + 5 <= prev_loc && // <=?
+                        (addr + 2) - (a + a_size) <= 127) {
+                    SAY_INFO(" valid prev^\n");
+                    m_bytes_taken[a] = a_size + 5;
+                    five_byte_ptr = a + a_size; 
+                    break;
+                }
+                prev_loc = a;
+            }
+            if (!five_byte_ptr) {
+                //SAY_INFO("no valid prev\n");
+                m_stats.bb_skipped_less_5++;
+                SAY_INFO("additional jump can't be placed at %p\n",
+                        addr);
+                getchar();
+
+                // if we decide skip bbs 
+                if (m_opts.skip_small_bb) {
+                    auto offset = addr - code_sect_remote;
+                    memcpy((void*)(code_sect_local + offset),
+                            (void*)(shadow_sect_local + offset),
+                            orig_size);
+                }
+            }
+            // place two jumps
+            {//FIXME:
+                SAY_FATAL("place jump here\n");
                 auto offset = addr - code_sect_remote;
-                //SAY_INFO("restoring orig: %p %p %x\n",
-                //        (void*)(code_sect->data.addr_loc() + offset),
-                //        (void*)(shadow_sect->addr_loc() + offset),
-                //        orig_size);
                 memcpy((void*)(code_sect_local + offset),
                         (void*)(shadow_sect_local + offset),
                         orig_size);
             }
-            //SAY_WARN("BB at %p has size %d (inst %d), is 1 byte"
-            //        "long\n",
-            //        addr, inst_size, orig_size);
+            
         }
-        else {
-            // Place jump
-            auto jump_size = trans->make_jump_from_orig_to_inst(
-                    addr, inst_addr);
+        else if (orig_size < 2) {
+            // nothing much we can do here
+            // if we decide skip bbs 
+            if (m_opts.skip_small_bb) {
+                m_stats.bb_skipped_less_2++;
+                auto offset = addr - code_sect_remote;
+                memcpy((void*)(code_sect_local + offset),
+                        (void*)(shadow_sect_local + offset),
+                        orig_size);
+            }
         }
+
+        prev_addrs.push_back(addr);
+        if (prev_addrs.size() > prev_vec_size) 
+            prev_addrs.erase(prev_addrs.begin());
     }
     if (m_opts.fix_dd_refs) 
         trans->fix_dd_refs();

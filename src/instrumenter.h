@@ -101,6 +101,7 @@ class instrumenter: public idebug_handler, public iveh_handler {
         std::map<size_t, instrumenter_module_data> m_inst_mods;
 
         std::set<size_t> m_bbs;
+        std::map<size_t, uint32_t> m_bytes_taken;
 
         // valid only for debugger backend
         std::vector<std::string> m_modules_to_instrument;
