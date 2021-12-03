@@ -263,10 +263,6 @@ void translator::add_cmpcov_inst(size_t addr, dasm::opcode* op)
             (op->first_op_name == XED_OPERAND_REG0 &&
              op->second_op_name == XED_OPERAND_MEM0)){
 
-        get_inst_ptr()[0] = 0xcc;
-        adjust_inst_offset(1);
-
-
         // cmp qword ptr [rbx], rdi
         ASSERT(op->mem_len0 == op->op_width);
 
@@ -745,6 +741,27 @@ uint32_t translator::translate_call_to_jump(
     return inst_size;
 }
 
+uint32_t translator::make_1byte_jump_from_orig_to_orig(
+        size_t jump_from, size_t jump_to)
+{
+    ASSERT((int)(jump_to - (jump_from + 2)) / 0x80 == 0);
+
+    size_t text_offset = jump_from - m_text_sect->addr_remote();
+    uint32_t inst_size = 2;
+
+    size_t bits = 8;
+    size_t disp = jump_to - (jump_from + inst_size);
+    auto op = dasm::maker();
+    xed_inst1(&op.enc_inst, op.dstate,
+            XED_ICLASS_JMP, 8,
+            xed_relbr((uint32_t)disp, 8));
+    auto new_inst_size = op.make(
+            (uint8_t*)(m_text_sect->addr_loc_raw() + text_offset), 
+            inst_size);
+    ASSERT(new_inst_size == inst_size);
+    return new_inst_size;
+}
+
 uint32_t translator::make_jump_from_orig_to_inst(
         size_t jump_from, size_t jump_to)
 {
@@ -860,7 +877,7 @@ size_t translator::translate(size_t addr,
             }
 
             if (should_add_cmp_inst) {
-                //add_cmpcov_inst(rip, op);
+                add_cmpcov_inst(rip, op);
             }
         }
 

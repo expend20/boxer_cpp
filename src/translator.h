@@ -46,6 +46,8 @@ class translator {
                 uint32_t* original_size);
 
         uint32_t make_jump_from_orig_to_inst(size_t jump_from, size_t jump_to);
+        uint32_t make_1byte_jump_from_orig_to_orig( size_t jump_from, 
+                size_t jump_to);
         void fix_dd_refs();
 
         void set_debug() { m_opts.debug = true; };

@@ -31,73 +31,94 @@ size_t instrumenter::find_inst_module(size_t addr)
     return 0;
 }
 
-void instrumenter::fix_two_bytes_bbs() 
+void instrumenter::fix_two_bytes_bbs(translator* trans, 
+        std::map<size_t, instrumenter_bb_info>& bbs_info, 
+        std::vector<size_t>& two_bytes_bbs)
 {
-    for (auto [addr_two_bytes, size_two_bytes]: m_two_bytes_bbs) {
-        auto our_it = m_bytes_taken.find(addr_two_bytes);
-        auto our_end = addr_two_bytes + size_two_bytes;
+    for (auto addr_two_bytes: two_bytes_bbs) {
+        auto our_it = bbs_info.find(addr_two_bytes);
+        auto our_end = addr_two_bytes + 2;
         auto our_begin = addr_two_bytes;
 
-        //SAY_INFO("going backwards\n");
+        //SAY_INFO("translating %p\n", addr_two_bytes);
 
         size_t ptr_five_bytes = 0;
         auto i = 0;
-        auto it = our_it;
-        for (; i < 40 && it != m_bytes_taken.end(); 
+        for (auto it = std::prev(our_it, 1);
+                i < 40 && it != bbs_info.end(); 
                 i++, it = std::prev(it, 1)) {
-            auto prev = std::prev(it, 1);
-            auto prev_end = prev->first + prev->second;
-            if (it->first - prev_end < 5) {
-                //SAY_INFO("not valid (short %d) %p %d\n", 
-                //        it->first - prev_end,
-                //        prev->first, prev->second);
+            auto p_base = it->first;
+            auto p_orig_size = it->second.orig_size;
+            auto p_bytes_left = p_orig_size - it->second.bytes_taken;
+            //SAY_INFO("Trying %p %d(%d)\n", p_base, p_orig_size, p_bytes_left);
+
+            if (p_bytes_left < 5) {
+                //SAY_INFO("not valid (short %d) %p %d\n", p_bytes_left,
+                //        p_base, p_orig_size);
                 continue;
             }
-            if (our_end - (it->first - 5) >= 0x80) {
-                //SAY_INFO("not valid (far %d) %p %d\n", 
-                //        our_end - (it->first - 5),
-                //        prev->first, prev->second);
+            auto new_addr = p_base + p_orig_size - 5;
+            if (our_end - new_addr >= 0x80) {
+                //SAY_INFO("not valid (far %d) %p %d(%d)\n", 
+                //        our_end - new_addr,
+                //        p_base, p_orig_size, p_bytes_left);
                 break;
             }
-            ptr_five_bytes = it->first - 5;
-            //SAY_INFO("valid new: %p\n", ptr_five_bytes);
-            m_bytes_taken[ptr_five_bytes] = 5;
+            ptr_five_bytes = new_addr;
+            //SAY_INFO("valid new: %p (%p %d(%d))\n", ptr_five_bytes, p_base,
+            //        p_orig_size, p_bytes_left);
+            it->second.orig_size -= 5;
+
+            // place 2 jumps
+            size_t inst_addr = trans->remote_orig_to_inst_bb(addr_two_bytes);
+            ASSERT(inst_addr);
+            trans->make_jump_from_orig_to_inst(ptr_five_bytes, inst_addr);
+            trans->make_1byte_jump_from_orig_to_orig(addr_two_bytes, 
+                    ptr_five_bytes);
+            //SAY_INFO("%p %p %p\n", addr_two_bytes, ptr_five_bytes, inst_addr);
+
             break;
         }
-
         if (ptr_five_bytes) continue;
-
         //SAY_INFO("backward search: not found\n");
+
         i = 0;
-        it = std::next(our_it, 1);
-        for (; i < 40 && it != m_bytes_taken.end(); 
+        for (auto it = std::next(our_it, 1); 
+                i < 40 && it != bbs_info.begin(); 
                 i++, it = std::next(it, 1)) {
-            auto next = std::next(it, 1);
-            auto curr_end = it->first + it->second;
-            if (next->first - curr_end < 5) {
+            auto n_base = it->first;
+            auto n_orig_size = it->second.orig_size;
+            auto n_bytes_left = n_orig_size - it->second.bytes_taken;
+            if (n_bytes_left < 5) {
                 //SAY_INFO("not valid (short %d) %p %d\n", 
                 //        next->first - curr_end,
                 //        it->first, it->second);
                 continue;
             }
-            if (curr_end - our_end >= 0x80) {
+            auto new_addr = n_base + it->second.bytes_taken;
+            if (new_addr - our_end >= 0x80) {
                 //SAY_INFO("not valid (far %d) %p %d\n", 
                 //        curr_end - our_end,
                 //        it->first, it->second);
                 break;
             }
 
-            ptr_five_bytes = curr_end;
-            //SAY_INFO("valid new: %p\n", curr_end);
-            it->second += 5;
+            ptr_five_bytes = new_addr;
+            it->second.bytes_taken += 5;
+            // place 2 jumps
+            size_t inst_addr = trans->remote_orig_to_inst_bb(addr_two_bytes);
+            ASSERT(inst_addr);
+            trans->make_jump_from_orig_to_inst(ptr_five_bytes, inst_addr);
+            trans->make_1byte_jump_from_orig_to_orig(addr_two_bytes, 
+                    ptr_five_bytes);
             break;
         }
-
         if (ptr_five_bytes) continue;
-        //SAY_INFO("forward search: not found\n");
-        SAY_INFO("can't patch <5 byte basic block at %p:%d\n", 
-                addr_two_bytes, size_two_bytes);
 
+        //SAY_INFO("forward search: not found\n");
+        //SAY_INFO("can't patch <5 byte basic block at %p:%d\n", 
+        //        addr_two_bytes, 2);
+        m_stats.bb_skipped_less_5++;
     }
 }
 
@@ -125,30 +146,54 @@ void instrumenter::translate_all_bbs()
     uint32_t prev_vec_size = 20;
     std::vector<size_t> prev_addrs;
 
+    std::vector<size_t> two_bytes_bbs;
+    std::map<size_t, instrumenter_bb_info> bbs_info;
+    
+    std::set<size_t> done_bytes;
+
     for (auto &addr: m_bbs) {
 
         uint32_t inst_size = 0;
         uint32_t orig_size = 0;
+        if (done_bytes.find(addr) != done_bytes.end()) {
+            SAY_INFO("Oops, already processed %p\n", addr);
+            __debugbreak();
+        }
         auto inst_addr = trans->translate(addr, &inst_size, &orig_size);
+        for (size_t ptr = addr; ptr < addr + orig_size; ptr++) 
+            done_bytes.insert(addr);
+        bbs_info[addr].orig_size = orig_size;
         ASSERT(inst_addr);
 
         if (orig_size >= 5) {
             // Place jump
             auto jump_size = trans->make_jump_from_orig_to_inst(
                     addr, inst_addr);
-            m_bytes_taken[addr] = jump_size;
+            //{// overwrite bytes left
+            //    auto offset_code = addr - code_sect_remote;
+            //    //SAY_INFO("%p [%p:%p]\n", addr, 
+            //    //        addr + jump_size,
+            //    //        addr + jump_size + orig_size - jump_size);
+
+            //    if (orig_size - jump_size) {
+            //        memset((void*)(code_sect_local + offset_code + jump_size),
+            //                0x90, orig_size - jump_size);
+            //    }
+            //    //__debugbreak();
+            //}
+            bbs_info[addr].bytes_taken = jump_size;
             //SAY_INFO("taken %p %d\n", addr, jump_size);
 
         } else if (orig_size < 5 && orig_size >= 2) {
             // add to second pass
-            m_bytes_taken[addr] = 2;
-            m_two_bytes_bbs[addr] = orig_size;
+            bbs_info[addr].bytes_taken = 2;
+            two_bytes_bbs.push_back(addr);
         }
         else if (orig_size < 2) {
             // nothing much we can do here
             // if we decide skip bbs 
+            m_stats.bb_skipped_less_2++;
             if (m_opts.skip_small_bb) {
-                m_stats.bb_skipped_less_2++;
                 auto offset = addr - code_sect_remote;
                 memcpy((void*)(code_sect_local + offset),
                         (void*)(shadow_sect_local + offset),
@@ -163,7 +208,7 @@ void instrumenter::translate_all_bbs()
     if (m_opts.fix_dd_refs) 
         trans->fix_dd_refs();
 
-    fix_two_bytes_bbs();
+    fix_two_bytes_bbs(trans, bbs_info, two_bytes_bbs);
 
     // Call commit on inst code
     code_sect->data.end();

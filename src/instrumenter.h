@@ -10,6 +10,11 @@
 #include <string>
 #include <vector>
 
+struct instrumenter_bb_info {
+    uint32_t orig_size = 0;
+    uint32_t bytes_taken = 0;
+};
+
 struct instrumenter_stats {
     size_t dbg_callbacks = 0;
     size_t veh_callbacks = 0;
@@ -93,7 +98,9 @@ class instrumenter: public idebug_handler, public iveh_handler {
         HANDLE get_target_process();
         void redirect_execution(size_t addr, size_t addr_inst);
         size_t find_inst_module(size_t addr);
-        void fix_two_bytes_bbs();
+        void fix_two_bytes_bbs(translator* trans, 
+                std::map<size_t, instrumenter_bb_info>& bbs_info, 
+                std::vector<size_t>& two_bytes_bbs);
 
     private:
         instrumenter_stats m_stats = {0};
@@ -102,8 +109,6 @@ class instrumenter: public idebug_handler, public iveh_handler {
         std::map<size_t, instrumenter_module_data> m_inst_mods;
 
         std::set<size_t> m_bbs;
-        std::map<size_t, uint32_t> m_bytes_taken;
-        std::map<size_t, uint32_t> m_two_bytes_bbs;
 
         // valid only for debugger backend
         std::vector<std::string> m_modules_to_instrument;

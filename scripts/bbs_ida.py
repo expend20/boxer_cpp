@@ -32,6 +32,16 @@ with open(filename, "wb") as fd:
 
         blockoffs = bytearray()
         for block in idaapi.FlowChart(idaapi.get_func(funcea)):
+            #print("%x %x" % (block.start_ea, block.end_ea))
+            prev_head = False
+            for head in Heads(block.start_ea, block.end_ea):
+                if prev_head:
+                    #print("after call: %x" % head)
+                    prev_head = False
+                    blockoffs += struct.pack("<i", head - image_base)
+                if idaapi.is_call_insn(head):
+                    prev_head = True
+                #print("%x" % head)
             if is_code(ida_bytes.get_full_flags(block.start_ea)):
                 # Write signed 32-bit offset from base of function
                 blockoffs += struct.pack("<i", block.start_ea - image_base)
