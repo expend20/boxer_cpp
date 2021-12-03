@@ -93,6 +93,7 @@ class instrumenter: public idebug_handler, public iveh_handler {
         HANDLE get_target_process();
         void redirect_execution(size_t addr, size_t addr_inst);
         size_t find_inst_module(size_t addr);
+        void fix_two_bytes_bbs();
 
     private:
         instrumenter_stats m_stats = {0};
@@ -102,6 +103,7 @@ class instrumenter: public idebug_handler, public iveh_handler {
 
         std::set<size_t> m_bbs;
         std::map<size_t, uint32_t> m_bytes_taken;
+        std::map<size_t, uint32_t> m_two_bytes_bbs;
 
         // valid only for debugger backend
         std::vector<std::string> m_modules_to_instrument;

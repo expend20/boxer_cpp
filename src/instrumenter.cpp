@@ -31,6 +31,76 @@ size_t instrumenter::find_inst_module(size_t addr)
     return 0;
 }
 
+void instrumenter::fix_two_bytes_bbs() 
+{
+    for (auto [addr_two_bytes, size_two_bytes]: m_two_bytes_bbs) {
+        auto our_it = m_bytes_taken.find(addr_two_bytes);
+        auto our_end = addr_two_bytes + size_two_bytes;
+        auto our_begin = addr_two_bytes;
+
+        //SAY_INFO("going backwards\n");
+
+        size_t ptr_five_bytes = 0;
+        auto i = 0;
+        auto it = our_it;
+        for (; i < 40 && it != m_bytes_taken.end(); 
+                i++, it = std::prev(it, 1)) {
+            auto prev = std::prev(it, 1);
+            auto prev_end = prev->first + prev->second;
+            if (it->first - prev_end < 5) {
+                //SAY_INFO("not valid (short %d) %p %d\n", 
+                //        it->first - prev_end,
+                //        prev->first, prev->second);
+                continue;
+            }
+            if (our_end - (it->first - 5) >= 0x80) {
+                //SAY_INFO("not valid (far %d) %p %d\n", 
+                //        our_end - (it->first - 5),
+                //        prev->first, prev->second);
+                break;
+            }
+            ptr_five_bytes = it->first - 5;
+            //SAY_INFO("valid new: %p\n", ptr_five_bytes);
+            m_bytes_taken[ptr_five_bytes] = 5;
+            break;
+        }
+
+        if (ptr_five_bytes) continue;
+
+        //SAY_INFO("backward search: not found\n");
+        i = 0;
+        it = std::next(our_it, 1);
+        for (; i < 40 && it != m_bytes_taken.end(); 
+                i++, it = std::next(it, 1)) {
+            auto next = std::next(it, 1);
+            auto curr_end = it->first + it->second;
+            if (next->first - curr_end < 5) {
+                //SAY_INFO("not valid (short %d) %p %d\n", 
+                //        next->first - curr_end,
+                //        it->first, it->second);
+                continue;
+            }
+            if (curr_end - our_end >= 0x80) {
+                //SAY_INFO("not valid (far %d) %p %d\n", 
+                //        curr_end - our_end,
+                //        it->first, it->second);
+                break;
+            }
+
+            ptr_five_bytes = curr_end;
+            //SAY_INFO("valid new: %p\n", curr_end);
+            it->second += 5;
+            break;
+        }
+
+        if (ptr_five_bytes) continue;
+        //SAY_INFO("forward search: not found\n");
+        SAY_INFO("can't patch <5 byte basic block at %p:%d\n", 
+                addr_two_bytes, size_two_bytes);
+
+    }
+}
+
 void instrumenter::translate_all_bbs()
 {
     SAY_INFO("Translating all basicblocks (could take a while)...\n");
@@ -70,55 +140,9 @@ void instrumenter::translate_all_bbs()
             //SAY_INFO("taken %p %d\n", addr, jump_size);
 
         } else if (orig_size < 5 && orig_size >= 2) {
-            // TODO: go forward too, not only backwards
-            // TODO: search at the end of the region, not at the beginning
-            // we can try to place short 2 byte jump up to 128 bytes back
-
-            size_t five_byte_ptr = 0;
-            size_t prev_loc = addr;
-            for (int i = prev_addrs.size() - 1; i > 0; i--) {
-                size_t a = prev_addrs[i];
-                size_t a_size = m_bytes_taken[prev_addrs[i]];
-                SAY_INFO("prev: %p size %x cap %x end %p  next %p dist %d\n",
-                        a, a_size,
-                        prev_loc - (a + a_size),
-                        a + a_size + 5, 
-                        prev_loc,
-                        (addr + 2) - (a + a_size));
-                
-                if (a + a_size + 5 <= prev_loc && // <=?
-                        (addr + 2) - (a + a_size) <= 127) {
-                    SAY_INFO(" valid prev^\n");
-                    m_bytes_taken[a] = a_size + 5;
-                    five_byte_ptr = a + a_size; 
-                    break;
-                }
-                prev_loc = a;
-            }
-            if (!five_byte_ptr) {
-                //SAY_INFO("no valid prev\n");
-                m_stats.bb_skipped_less_5++;
-                SAY_INFO("additional jump can't be placed at %p\n",
-                        addr);
-                getchar();
-
-                // if we decide skip bbs 
-                if (m_opts.skip_small_bb) {
-                    auto offset = addr - code_sect_remote;
-                    memcpy((void*)(code_sect_local + offset),
-                            (void*)(shadow_sect_local + offset),
-                            orig_size);
-                }
-            }
-            // place two jumps
-            {//FIXME:
-                SAY_FATAL("place jump here\n");
-                auto offset = addr - code_sect_remote;
-                memcpy((void*)(code_sect_local + offset),
-                        (void*)(shadow_sect_local + offset),
-                        orig_size);
-            }
-            
+            // add to second pass
+            m_bytes_taken[addr] = 2;
+            m_two_bytes_bbs[addr] = orig_size;
         }
         else if (orig_size < 2) {
             // nothing much we can do here
@@ -138,6 +162,8 @@ void instrumenter::translate_all_bbs()
     }
     if (m_opts.fix_dd_refs) 
         trans->fix_dd_refs();
+
+    fix_two_bytes_bbs();
 
     // Call commit on inst code
     code_sect->data.end();

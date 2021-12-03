@@ -187,6 +187,10 @@ void translator::add_cmpcov_inst(size_t addr, dasm::opcode* op)
                 XED_REG_RAX_EAX, op->imm_width);
 
         uint32_t mem_disp = op->mem_disp;
+        uint32_t mem_disp_width = 32; // force disp width to ensure we'll fit
+        if (op->reg_base == XED_REG_SP) {
+            mem_disp += sizeof(size_t);
+        }
 
         // just get size in PC case
         auto inst_offset_bak = m_inst_offset;
@@ -195,8 +199,7 @@ void translator::add_cmpcov_inst(size_t addr, dasm::opcode* op)
                 xed_mem_bisd(op->reg_base, 
                     op->reg_index, 
                     op->scale,
-                    xed_disp(mem_disp,
-                        op->mem_disp_width * 8),
+                    xed_disp(mem_disp, mem_disp_width),
                     op->imm_width));
             
         // adjust disp & size in PC case
@@ -260,6 +263,10 @@ void translator::add_cmpcov_inst(size_t addr, dasm::opcode* op)
             (op->first_op_name == XED_OPERAND_REG0 &&
              op->second_op_name == XED_OPERAND_MEM0)){
 
+        get_inst_ptr()[0] = 0xcc;
+        adjust_inst_offset(1);
+
+
         // cmp qword ptr [rbx], rdi
         ASSERT(op->mem_len0 == op->op_width);
 
@@ -276,6 +283,10 @@ void translator::add_cmpcov_inst(size_t addr, dasm::opcode* op)
         make_op_1(XED_ICLASS_PUSH, 64, xed_reg(prop_reg_largest));
 
         uint32_t mem_disp = op->mem_disp;
+        uint32_t mem_disp_width = 32; // force disp width to ensure we'll fit
+        if (op->reg_base == XED_REG_SP) {
+            mem_disp += sizeof(size_t) * 2;
+        }
 
         // just get size in PC case
         auto inst_offset_bak = m_inst_offset;
@@ -284,8 +295,7 @@ void translator::add_cmpcov_inst(size_t addr, dasm::opcode* op)
                 xed_mem_bisd(op->reg_base, 
                     op->reg_index, 
                     op->scale,
-                    xed_disp(mem_disp,
-                        op->mem_disp_width * 8),
+                    xed_disp(mem_disp, mem_disp_width),
                     op->op_width));
             
         // adjust disp & size in PC case
@@ -850,7 +860,7 @@ size_t translator::translate(size_t addr,
             }
 
             if (should_add_cmp_inst) {
-                add_cmpcov_inst(rip, op);
+                //add_cmpcov_inst(rip, op);
             }
         }
 
