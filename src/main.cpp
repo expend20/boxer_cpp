@@ -112,9 +112,9 @@ int main(int argc, const char** argv)
     auto cmd = GetOption("--cmd", argc, argv);
     if (!cmd) {
         SAY_ERROR("Specify --cmd parameter.\n");
-        exit(-1);
         return -1;
     }
+
     auto dbg = debugger(cmd, 
         DEBUG_PROCESS | DEBUG_ONLY_THIS_PROCESS);
     

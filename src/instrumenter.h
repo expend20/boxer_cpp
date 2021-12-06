@@ -1,5 +1,5 @@
-#ifndef INSTRUMENTOR_H
-#define INSTRUMENTOR_H
+#ifndef INSTRUMENTER_H
+#define INSTRUMENTER_H
 
 #include "debugger.h"
 #include "veh.h"
@@ -39,18 +39,23 @@ struct instrumenter_options {
     bool translator_debug = false;
     bool translator_disasm = false;
     bool translator_single_step = false;
+    bool translator_cmpcov = false;
     size_t stop_at = 0;
+    size_t covbuf_size = 64 * 1024;
 };
 
-struct instrumenter_module_data {
-    std::string        module_name;
-    pehelper::pe       pe;
-    pehelper::section* code_sect;
-    mem_tool           shadow;
-    mem_tool           inst;
-    mem_tool           cov;
-    mem_tool           cmpcov;
-    translator         translator;
+class instrumenter_module_data {
+    public:
+        std::string        module_name;
+        pehelper::pe       pe;
+        pehelper::section* code_sect;
+        mem_tool           shadow;
+        mem_tool           inst;
+        mem_tool           cov;
+        mem_tool           cmpcov;
+        translator         translator;
+    private:
+        //instrumenter_module_data(const instrumenter_module_data&) = delete;
 };
 
 class instrumenter: public idebug_handler, public iveh_handler {
@@ -80,14 +85,23 @@ class instrumenter: public idebug_handler, public iveh_handler {
         void set_fix_dd_refs() { m_opts.fix_dd_refs = true; };
         void set_debug() { m_opts.debug = true; };
         void set_show_flow() { m_opts.show_flow = true; };
+        void set_trans_cmpcov() { m_opts.translator_cmpcov = true; };
         void set_trans_debug() { m_opts.translator_debug = true; };
         void set_trans_disasm() { m_opts.translator_disasm = true; };
         void set_trans_single_step() { m_opts.translator_single_step = true; };
         void set_call_to_jump() { m_opts.call_to_jump = true; };
         void set_skip_small_bb() { m_opts.skip_small_bb = true; };
         void set_stop_at(size_t v) { m_opts.stop_at = v; };
+        void set_covbuf_size(size_t v) { m_opts.covbuf_size = v; };
+
+        uint8_t* get_cov(uint32_t* size);
+        uint8_t* get_cmpcov(uint32_t* size);
+
+        void clear_cov();
+        void clear_cmpcov();
 
     private:
+        //instrumenter(const instrumenter&) = delete;
 
         DWORD handle_exception(EXCEPTION_DEBUG_INFO* dbg_info);
         bool should_instrument_module(const char* name);
@@ -99,8 +113,8 @@ class instrumenter: public idebug_handler, public iveh_handler {
         void redirect_execution(size_t addr, size_t addr_inst);
         size_t find_inst_module(size_t addr);
         void fix_two_bytes_bbs(translator* trans, 
-                std::map<size_t, instrumenter_bb_info>& bbs_info, 
-                std::vector<size_t>& two_bytes_bbs);
+                std::map<size_t, instrumenter_bb_info>* bbs_info, 
+                std::vector<size_t>* two_bytes_bbs);
 
     private:
         instrumenter_stats m_stats = {0};
@@ -123,4 +137,4 @@ class instrumenter: public idebug_handler, public iveh_handler {
 
 };
 
-#endif // INSTRUMENTOR_H
+#endif // INSTRUMENTER_H

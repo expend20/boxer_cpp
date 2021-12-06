@@ -52,6 +52,7 @@ class mem_tool {
         HANDLE               m_proc = 0;
         size_t               m_addr_remote = 0;
         DWORD                m_old_prot = 0;
+        DWORD                m_curr_prot = 0;
         bool                 m_is_local = false;
 
         // used only if m_is_local=true

@@ -64,7 +64,8 @@ size_t mem_tool::addr_loc_raw() {
 
 void mem_tool::begin() {
     if (m_is_local) {
-        change_protection(PAGE_READWRITE);
+        if (m_curr_prot != PAGE_READWRITE)
+            change_protection(PAGE_READWRITE);
     }
 }
 
@@ -99,6 +100,9 @@ size_t mem_tool::addr_loc_end() {
 }
 
 void mem_tool::read() {
+
+    if (m_is_local) return;
+
     SIZE_T rw = 0;
 
     if (!ReadProcessMemory(m_proc, (void*)m_addr_remote, &m_data[0], 
@@ -168,6 +172,7 @@ size_t mem_tool::change_protection(DWORD prot){
         SAY_DEBUG("Section %p:%x changed protection from %x to %x\n",
                 m_addr_remote, sz, m_old_prot, prot);
     }
+    m_curr_prot = prot;
 
     return 0;
 }
@@ -176,6 +181,8 @@ size_t mem_tool::restore_prev_protection(){
     DWORD new_prot = 0;
     auto sz = m_is_local ? m_local_len : m_data.size();
     ASSERT(sz != 0);
+
+    if (m_old_prot == m_curr_prot) return 0;
 
     SAY_DEBUG("Restoring section protection %x %p:%p\n", m_old_prot,
             m_addr_remote, sz);
@@ -187,6 +194,7 @@ size_t mem_tool::restore_prev_protection(){
                 sz, helper::getLastErrorAsString().c_str());
     }
 
+    m_curr_prot = m_old_prot;
     m_old_prot = new_prot;
     return 0;
 

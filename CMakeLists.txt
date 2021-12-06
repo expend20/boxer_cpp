@@ -21,6 +21,7 @@ add_library(boxer_lib
     src/mem_tool.cpp
     src/translator.cpp
     src/dasm.cpp
+    src/mutator.cpp
     )
 
 add_dependencies(boxer_lib xed)

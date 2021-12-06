@@ -7,17 +7,21 @@
 #include <psapi.h>
 
 #include "instrumenter.h"
+#include "mutator.h"
 
 typedef void (*t_fuzz_proc)(const char* data, size_t len);
+typedef void (*t_init_func)();
 
-class test_acc_test {
+class in_process_dll_harness {
 
     private:
         HMODULE lib = 0;
         t_fuzz_proc fuzz_proc = 0;
 
     public:
-        test_acc_test(const char* lib_path, const char* proc_name) {
+        in_process_dll_harness(const char* lib_path, 
+                const char* proc_name,
+                const char* init_name) {
 
             lib = LoadLibrary(lib_path);
             if (!lib) 
@@ -27,6 +31,11 @@ class test_acc_test {
             if (!fuzz_proc) 
                 SAY_FATAL("Can't find proc %s in %p mod\n", proc_name, lib);
 
+            if (init_name) {
+                auto init = (t_init_func)GetProcAddress(lib, init_name);
+                if (!init) SAY_FATAL("Can't find init func: %s\n", init_name);
+                init();
+            }
         }
 
         void call_fuzz_proc(const char* data, size_t len) {
@@ -36,10 +45,145 @@ class test_acc_test {
 
         size_t get_module() { return (size_t)lib; }
 
-        ~test_acc_test() {
+        ~in_process_dll_harness() {
             if (lib) FreeLibrary(lib);
         }
 };
+
+struct fuzzer_stats {
+    ULONGLONG execs = 0;
+};
+
+class in_process_fuzzer {
+    public: 
+        in_process_fuzzer(
+                in_process_dll_harness* harness, 
+                instrumenter* inst) : 
+            m_harness_inproc(harness), 
+            m_inst(inst)
+        {
+            m_mutator = mutator();
+            // init mutator
+            {
+                std::vector<uint8_t> d;
+                d.resize(256);
+                for (uint32_t i = 0; i < d.size(); i++) {
+                    d[i] = rand() % 256;
+                }
+                m_mutator.add_sample_to_corpus(d);
+            }
+
+            // TODO: init coverage tool
+        }
+        void run();
+
+    private:
+        void print_stats(bool force);
+
+    private:
+        in_process_dll_harness* m_harness_inproc = 0;
+        instrumenter* m_inst = 0;
+
+        mutator m_mutator;
+        uint32_t m_stats_sec_timeout = 3;
+
+        fuzzer_stats m_stats;
+};
+
+void in_process_fuzzer::print_stats(bool force) 
+{
+    static ULONGLONG prevTicks = GetTickCount64();
+    static ULONGLONG printStatsCount = 1;
+
+    ULONGLONG newTicks = GetTickCount64();
+    if (newTicks - prevTicks > 1000 * m_stats_sec_timeout || force) {
+        static ULONGLONG prevExecs = 1;
+
+        ULONGLONG newExecs = m_stats.execs - prevExecs;
+        auto fcps = (double)newExecs / m_stats_sec_timeout;
+        SAY_INFO("%8.2f overall fcps, %8.2f current fcps\n"
+                "%10d total execs, %10d new execs\n",
+                (double)m_stats.execs / (printStatsCount * m_stats_sec_timeout),
+                fcps,
+                m_stats.execs, newExecs 
+                );
+        m_inst->print_stats();
+
+        printStatsCount++;
+        prevTicks = newTicks;
+        prevExecs = m_stats.execs;
+    }
+}
+
+void in_process_fuzzer::run() 
+{
+    auto new_sample = 
+        helper::readFile("z:\\in\\in_cr_new_samples\\w10-valid\\nikon_d1h.nef");
+    do { 
+        if (m_stats.execs % 10 == 0) {
+            print_stats(false);
+        }
+
+        //
+        // clear coverage
+        //
+        m_inst->clear_cov();
+        m_inst->clear_cmpcov();
+
+        //
+        // get mutation
+        //
+        //auto new_sample = m_mutator.get_next_mutation();
+
+        //
+        // run code
+        //
+        //SAY_INFO("sample: %p %x\n", &new_sample[0], new_sample.size());
+        m_stats.execs++;
+        m_harness_inproc->call_fuzz_proc((const char*)&new_sample[0], 
+                new_sample.size());
+
+        // is crashed? how to restart?
+
+        //
+        // get coverage
+        // 
+        //{ // check cov
+        //    //SAY_INFO("cov:\n");
+        //    uint32_t cov_size = 0;
+        //    uint8_t* cov = m_inst->get_cov(&cov_size);
+        //    //SAY_INFO("cov size %d\n", cov_size);
+        //    uint32_t cov_hit = 0;
+        //    for (uint32_t i = 0; i < cov_size; i++) {
+        //        if (cov[i]) {
+        //            cov_hit++;
+        //            //SAY_INFO("%x: %x ", i, cov[i]);
+        //        }
+        //    }
+        //    //SAY_INFO("\n%x bbs hit\n", cov_hit);
+        //}
+
+        //{ // check cmpcov
+        //    SAY_INFO("cmpcov:\n");
+        //    uint32_t cmpcov_size = 0;
+        //    uint8_t* cmpcov = m_inst->get_cmpcov(&cmpcov_size);
+        //    SAY_INFO("cmpcov size %d\n", cmpcov_size);
+        //    uint32_t cmpcov_hit = 0;
+        //    for (uint32_t i = 0; i < cmpcov_size; i++) {
+        //        if (cmpcov[i]) {
+        //            cmpcov_hit++;
+        //            SAY_INFO("%x: %x ", i, cmpcov[i]);
+        //        }
+        //    }
+        //    SAY_INFO("\n%x bbs hit\n", cmpcov_hit);
+        //}
+
+        // if new coverage, stabilize it
+
+        // add to corpus
+
+    }while(1);
+}
 
 void load_lib_and_call_proc()
 {
@@ -96,6 +240,13 @@ int main(int argc, const char** argv)
         SAY_INFO("inst_debug = true\n");
         ins.set_debug();
     }
+
+    auto is_cmpcov = GetBinaryOption("--cmpcov", 
+            argc, argv, true);
+    if (is_cmpcov) {
+        SAY_INFO("cmpcov = true\n");
+        ins.set_trans_cmpcov();
+    }
     auto is_trans_debug = GetBinaryOption("--trans_debug", argc, argv, false);
     if (is_trans_debug) {
         SAY_INFO("is_trans_debug = true\n");
@@ -125,10 +276,16 @@ int main(int argc, const char** argv)
         SAY_ERROR("stop_at = %d\n", cycles);
         ins.set_stop_at(cycles);
     }
+    auto covbuf_size = GetOption("--covbuf_size", argc, argv);
+    if (covbuf_size) {
+        uint32_t v = atoi(covbuf_size) * 1024;
+        SAY_ERROR("covbuf_size = %d\n", v);
+        ins.set_covbuf_size(v);
+    }
 
     auto dll = GetOption("--dll", argc, argv);
     if (!dll) {
-        dll = "AccTest.dll";
+        dll = "HarnessWicLib.dll";
     }
     if (!cov_mods.size()) {
         SAY_INFO("Module to instrument: %s\n", dll);
@@ -137,13 +294,18 @@ int main(int argc, const char** argv)
 
     auto func = GetOption("--func", argc, argv);
     if (!func) {
-        func = "FuzzMe1"; 
+        func = "fuzzIteration"; 
+    }
+
+    auto init_func = GetOption("--init_func", argc, argv);
+    if (!init_func) {
+        init_func = "initHeif"; 
     }
 
     auto vehi = veh_installer();
     vehi.register_handler(&ins);
 
-    auto tester = test_acc_test(dll, func);
+    auto in_proc_harn = in_process_dll_harness(dll, func, init_func);
     std::vector<size_t> libs_resolved;
     for (auto &mod_name: cov_mods) {
         auto lib = (size_t)LoadLibrary(mod_name);
@@ -153,8 +315,10 @@ int main(int argc, const char** argv)
         ins.explicit_instrument_module(lib, mod_name);
     }
 
-    tester.call_fuzz_proc("1337133_", 8);
+    auto fuzz = in_process_fuzzer(&in_proc_harn, &ins);
+    fuzz.run();
 
+    SAY_INFO("---\n");
     ins.print_stats();
     for (auto &addr: libs_resolved) {
         ins.uninstrument(addr);

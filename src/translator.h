@@ -18,7 +18,7 @@ struct translator_opts {
     bool disasm = false;
     bool single_step = false;
     bool call_to_jmp = false;
-    bool cmpcov = true;
+    bool cmpcov = false;
     mem_tool* shadow_code = 0;
     int32_t red_zone_size = 0;
 };
@@ -59,6 +59,7 @@ class translator {
         void set_bbs(std::set<size_t>* p) { m_bbs = p; };
 
         translator_stats* get_stats() { return &m_stats; };
+        uint32_t get_cmpinst_size() { return m_cmpcov_offset; };
 
     private:
         uint8_t* get_inst_ptr();

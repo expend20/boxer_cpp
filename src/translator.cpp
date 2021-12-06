@@ -59,14 +59,12 @@ void translator::add_cmpcov_inst(size_t addr, dasm::opcode* op)
     // TODO: if add/sub, shouldn't we compare the result of addition/subraction?
     // TODO: use test opcode for test opcodes
 
+    //SAY_INFO("instrumenting %x cmp %p\n", m_cmpcov_offset, addr);
     size_t entry_offset = m_inst_offset;
     auto should_break = false;
 
     // it sould be `cmp [mem], reg` not `cmp reg, [mem]`
     ASSERT(op->mem_len1 == 0);
-
-    //get_inst_ptr()[0] = 0xcc;
-    //adjust_inst_offset(1);
 
     adjust_stack_red_zone();
 
@@ -375,7 +373,10 @@ void translator::adjust_cmpcov_offset(size_t v)
 void translator::adjust_cov_offset(size_t v)
 {
     m_cov_offset += v;
-    ASSERT(m_cov_offset <= m_cov_buf->size());
+    if (m_cov_offset >= m_cov_buf->size()) {
+        ASSERT(m_cov_offset % m_cov_buf->size() == 0);
+        m_cov_offset = 0;
+    }
 }
 
 void translator::adjust_inst_offset(size_t v)
@@ -793,6 +794,7 @@ size_t translator::translate(size_t addr,
         uint32_t* instrumented_size,
         uint32_t* original_size)
 {
+
     static auto one_time_init = false;
     if (!one_time_init) {
         xed_tables_init();
@@ -904,6 +906,9 @@ size_t translator::translate(size_t addr,
                     m_inst_code->addr_remote() + m_inst_offset - 4);
         }
 
+        if (op->category == XED_CATEGORY_CALL) {
+            break;
+        }
         if (op->category == XED_CATEGORY_RET) {
             break;
         }

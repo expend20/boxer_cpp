@@ -5,6 +5,64 @@
 #include "say.h"
 #include "tools.h"
 
+void instrumenter::clear_cov()
+{
+    if (m_inst_mods.size() != 1) {
+        SAY_FATAL("Only one inst module is currently supported, got %d\n", 
+                m_inst_mods.size());
+    }
+    auto it = m_inst_mods.begin();
+    auto mod = &(it->second);
+    auto addr = mod->cov.begin_addr_loc();
+    auto sz = mod->cov.size();
+    memset((void*)addr, 0, sz);
+    mod->cov.end();
+}
+
+void instrumenter::clear_cmpcov()
+{
+    if (m_inst_mods.size() != 1) {
+        SAY_FATAL("Only one inst module is currently supported, got %d\n", 
+                m_inst_mods.size());
+    }
+    auto mod = &(m_inst_mods.begin()->second);
+    memset((void*)mod->cmpcov.begin_addr_loc(), 0, 
+            mod->translator.get_cmpinst_size());
+    mod->cmpcov.end();
+}
+
+uint8_t* instrumenter::get_cov(uint32_t* size)
+{
+    if (m_inst_mods.size() != 1) {
+        SAY_FATAL("Only one inst module is currently supported, got %d\n", 
+                m_inst_mods.size());
+    }
+
+    auto mod = &(m_inst_mods.begin()->second);
+    mod->cov.read();
+    uint8_t* res = (uint8_t*)mod->cov.addr_loc_raw();
+    if (size) 
+        *size = (uint32_t)mod->cov.size();
+
+    return res;
+}
+
+uint8_t* instrumenter::get_cmpcov(uint32_t* size)
+{
+    if (m_inst_mods.size() != 1) {
+        SAY_FATAL("Only one inst module is currently supported, got %d\n", 
+                m_inst_mods.size());
+    }
+
+    auto mod = &(m_inst_mods.begin()->second);
+    mod->cmpcov.read();
+    uint8_t* res = (uint8_t*)mod->cmpcov.addr_loc_raw();
+    if (size) 
+        *size = (uint32_t)mod->translator.get_cmpinst_size();
+
+    return res;
+}
+
 HANDLE instrumenter::get_target_process()
 {
     HANDLE res = INVALID_HANDLE_VALUE;
@@ -32,11 +90,11 @@ size_t instrumenter::find_inst_module(size_t addr)
 }
 
 void instrumenter::fix_two_bytes_bbs(translator* trans, 
-        std::map<size_t, instrumenter_bb_info>& bbs_info, 
-        std::vector<size_t>& two_bytes_bbs)
+        std::map<size_t, instrumenter_bb_info>* bbs_info, 
+        std::vector<size_t>* two_bytes_bbs)
 {
-    for (auto addr_two_bytes: two_bytes_bbs) {
-        auto our_it = bbs_info.find(addr_two_bytes);
+    for (auto addr_two_bytes: *two_bytes_bbs) {
+        auto our_it = bbs_info->find(addr_two_bytes);
         auto our_end = addr_two_bytes + 2;
         auto our_begin = addr_two_bytes;
 
@@ -45,7 +103,7 @@ void instrumenter::fix_two_bytes_bbs(translator* trans,
         size_t ptr_five_bytes = 0;
         auto i = 0;
         for (auto it = std::prev(our_it, 1);
-                i < 40 && it != bbs_info.end(); 
+                i < 40 && it != bbs_info->end(); 
                 i++, it = std::prev(it, 1)) {
             auto p_base = it->first;
             auto p_orig_size = it->second.orig_size;
@@ -84,7 +142,7 @@ void instrumenter::fix_two_bytes_bbs(translator* trans,
 
         i = 0;
         for (auto it = std::next(our_it, 1); 
-                i < 40 && it != bbs_info.begin(); 
+                i < 40 && it != bbs_info->begin(); 
                 i++, it = std::next(it, 1)) {
             auto n_base = it->first;
             auto n_orig_size = it->second.orig_size;
@@ -144,26 +202,19 @@ void instrumenter::translate_all_bbs()
     translator* trans = &m_inst_mods[mod_base].translator;
 
     uint32_t prev_vec_size = 20;
-    std::vector<size_t> prev_addrs;
 
     std::vector<size_t> two_bytes_bbs;
     std::map<size_t, instrumenter_bb_info> bbs_info;
     
-    std::set<size_t> done_bytes;
-
     for (auto &addr: m_bbs) {
 
         uint32_t inst_size = 0;
         uint32_t orig_size = 0;
-        if (done_bytes.find(addr) != done_bytes.end()) {
-            SAY_INFO("Oops, already processed %p\n", addr);
-            __debugbreak();
-        }
         auto inst_addr = trans->translate(addr, &inst_size, &orig_size);
-        for (size_t ptr = addr; ptr < addr + orig_size; ptr++) 
-            done_bytes.insert(addr);
         bbs_info[addr].orig_size = orig_size;
         ASSERT(inst_addr);
+
+        if (!m_opts.fix_dd_refs) continue; // don't fix jump in this mode
 
         if (orig_size >= 5) {
             // Place jump
@@ -190,36 +241,43 @@ void instrumenter::translate_all_bbs()
             two_bytes_bbs.push_back(addr);
         }
         else if (orig_size < 2) {
-            // nothing much we can do here
-            // if we decide skip bbs 
-            m_stats.bb_skipped_less_2++;
-            if (m_opts.skip_small_bb) {
-                auto offset = addr - code_sect_remote;
-                memcpy((void*)(code_sect_local + offset),
-                        (void*)(shadow_sect_local + offset),
-                        orig_size);
+            // quick check for nop
+            auto offset_code = addr - code_sect_remote;
+            //SAY_INFO("%p [%p:%p]\n", addr, 
+            if (*(uint8_t*)(shadow_sect_local + offset_code) == 0x90) {
+                *(uint8_t*)(code_sect_local + offset_code) = 0x90;
+            }
+            else {
+                // nothing much we can do here
+                // if we decide skip bbs 
+                m_stats.bb_skipped_less_2++;
+                if (m_opts.skip_small_bb) {
+                    auto offset = addr - code_sect_remote;
+                    memcpy((void*)(code_sect_local + offset),
+                            (void*)(shadow_sect_local + offset),
+                            orig_size);
+                }
             }
         }
-
-        prev_addrs.push_back(addr);
-        if (prev_addrs.size() > prev_vec_size) 
-            prev_addrs.erase(prev_addrs.begin());
     }
+
+    SAY_INFO("Fixing dd refs...\n");
     if (m_opts.fix_dd_refs) 
         trans->fix_dd_refs();
 
-    fix_two_bytes_bbs(trans, bbs_info, two_bytes_bbs);
+    SAY_INFO("Fixing two bytes bb...\n");
+    fix_two_bytes_bbs(trans, &bbs_info, &two_bytes_bbs);
 
     // Call commit on inst code
     code_sect->data.end();
     m_inst_mods[mod_base].inst.end();
 
-    auto r = FlushInstructionCache(
-            this->get_target_process(),
-            (void*)code_sect->data.addr_remote(), 
-            code_sect->data.size()
-            );
-    ASSERT(r);
+    //auto r = FlushInstructionCache(
+    //        this->get_target_process(),
+    //        (void*)code_sect->data.addr_remote(), 
+    //        code_sect->data.size()
+    //        );
+    //ASSERT(r);
 
     SAY_INFO("All bbs translation done...\n");
 }
@@ -310,11 +368,11 @@ bool instrumenter::translate_or_redirect(size_t addr)
         uint32_t orig_size = 0;
         inst_addr = trans->translate(addr, &inst_size, &orig_size);
         ASSERT(inst_addr);
-        if (m_opts.fix_dd_refs) 
+        if (m_opts.fix_dd_refs) {
             trans->fix_dd_refs();
-
-        if (m_opts.is_bbs_inst ||
-                m_opts.is_int3_inst_blind) {
+        }
+        if ((m_opts.is_bbs_inst || m_opts.is_int3_inst_blind) && 
+                m_opts.fix_dd_refs) {
 
             if (orig_size < 5) {
                 m_stats.bb_skipped_less_5++;
@@ -485,7 +543,7 @@ void instrumenter::instrument_module(size_t addr, const char* name)
     m_inst_mods[addr].inst = mem_inst;
 
     // get coverage buffer
-    size_t cov_buf_size = img_size;
+    size_t cov_buf_size = m_opts.covbuf_size;
     auto cov_buf = tools::alloc_after_pe_image(hproc, 
             code_inst + code_inst_size,
             cov_buf_size,
@@ -529,6 +587,9 @@ void instrumenter::instrument_module(size_t addr, const char* name)
 
     if (m_opts.translator_single_step)
         trans.set_single_step();
+
+    if (m_opts.translator_cmpcov)
+        trans.set_cmpcov();
 
     m_inst_mods[addr].translator = trans;
 
@@ -853,33 +914,38 @@ void instrumenter::uninstrument(size_t addr)
     if (it == m_inst_mods.end()) return;
 
     auto proc = get_target_process();
-    auto data = it->second;
-    if (!data.inst.size()) SAY_FATAL("Uninstrument called for not instrumented "
-            "module %p %s\n", addr, data.module_name.c_str());
-    SAY_INFO("Uninstrumenting module %p %s\n", addr, data.module_name.c_str());
+    auto data = &(it->second);
+    if (!data->inst.size()) {
+        SAY_FATAL("Uninstrument called for not instrumented "
+            "module %p %s\n", addr, data->module_name.c_str());
+    }
+    SAY_INFO("Uninstrumenting module %p %s\n", addr, data->module_name.c_str());
 
-    auto r = VirtualFreeEx(proc, (void*)data.inst.addr_remote(), 0, 
+    auto r = VirtualFreeEx(proc, (void*)data->inst.addr_remote(), 0, 
             MEM_RELEASE);
     if (!r) {
         SAY_FATAL("Can't free mem in %x proc, at %p:%x, err = %s\n",
-                proc, data.inst.addr_remote(), data.inst.size(), 
+                proc, data->inst.addr_remote(), data->inst.size(), 
                 helper::getLastErrorAsString().c_str());
     }
-    if (data.shadow.size()) {
+    if (data->shadow.size()) {
         // restore code section
-        data.code_sect->data.begin();
-        memcpy((void*)data.shadow.addr_loc_raw(),
-                (void*)data.code_sect->data.addr_loc_raw(), 
-                data.shadow.size());
-        data.code_sect->data.end();
+        data->code_sect->data.begin();
+        memcpy((void*)data->code_sect->data.addr_loc_raw(), 
+                (void*)data->shadow.addr_loc_raw(),
+                data->shadow.size());
+        data->code_sect->data.end();
         
-        r = VirtualFreeEx(proc, (void*)data.shadow.addr_remote(), 0, 
+        r = VirtualFreeEx(proc, (void*)data->shadow.addr_remote(), 0, 
                 MEM_RELEASE);
         ASSERT(r);
     }
-    r = VirtualFreeEx(proc, (void*)data.cov.addr_remote(), 0, MEM_RELEASE);
+    else {
+        data->code_sect->data.restore_prev_protection();
+    }
+    r = VirtualFreeEx(proc, (void*)data->cov.addr_remote(), 0, MEM_RELEASE);
     ASSERT(r);
-    r = VirtualFreeEx(proc, (void*)data.cmpcov.addr_remote(), 0, 
+    r = VirtualFreeEx(proc, (void*)data->cmpcov.addr_remote(), 0, 
             MEM_RELEASE);
     ASSERT(r);
     m_inst_mods.erase(it);

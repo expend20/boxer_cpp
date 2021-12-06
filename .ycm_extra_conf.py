@@ -6,7 +6,7 @@ def Settings( **kwargs ):
       'flags': ['-x', 'c++',
                 '-std=c++17',
                 '-D', 'WINDOWS=1',
-                #'-D', 'X86_64=1',
+                '-D', 'X86_64=1',
                 '-I', 'src',
                 '-I', 'third_party',
                 '-I', '',
