@@ -5,6 +5,75 @@
 #include "say.h"
 #include "tools.h"
 
+#define MAGIC_OFFSET_STORE 7
+#define MAGIC_OFFSET_RESTORE 0x2a
+#define MAGIC_OFFSET_CONTINUE 0x2e
+
+#include <string.h>
+int __strcmp(char* str1, char* str2) {
+    SAY_INFO("strcmp: %s %s\n", str1, str2);
+    return strcmp(str1, str2);
+}
+
+int __stricmp(char* str1, char* str2) {
+    SAY_INFO("stricmp: %s %s\n", str1, str2);
+    return _stricmp(str1, str2);
+}
+
+int __strncmp(char* str1, char* str2, size_t n) {
+    SAY_INFO("strncmp: %s %s %d\n", str1, str2, n);
+    return strncmp(str1, str2, n);
+}
+
+int __strnicmp(char* str1, char* str2, size_t n) {
+    SAY_INFO("strnicmp: %s %s %d\n", str1, str2, n);
+    return _strnicmp(str1, str2, n);
+}
+
+// FIXME: think about the interface
+// FIXME: fix for remote process
+void instrumenter::set_strcmpcov() {
+
+    auto it = m_inst_mods.begin();
+    auto mod = &(it->second);
+
+    auto imports = mod->pe.get_imports();
+    for (auto &import: *imports) {
+
+        SAY_INFO("import %s\n", import.name.c_str());
+
+        import.sect->data.make_writeable();
+
+        for (auto &func: import.funcs) {
+            //SAY_INFO("%s.%s %p\n", import.name.c_str(), func.name.c_str(),
+            //        func.externAddr);
+
+            if (strstr(func.name.c_str(), "strcmp")) {
+                SAY_INFO("Patching strcmp: %p -> %p\n", func.externAddr,
+                        __strcmp);
+                *(size_t*)func.externAddr = (size_t)__strcmp;
+            }
+            else if (strstr(func.name.c_str(), "stricmp")) {
+                SAY_INFO("Patching stricmp: %p -> %p\n", func.externAddr,
+                        __stricmp);
+                *(size_t*)func.externAddr = (size_t)__stricmp;
+            }
+            else if (strstr(func.name.c_str(), "strncmp")) {
+                SAY_INFO("Patching strncmp: %p -> %p\n", func.externAddr,
+                        __strncmp);
+                *(size_t*)func.externAddr = (size_t)__strncmp;
+            }
+            else if (strstr(func.name.c_str(), "strnicmp")) {
+                SAY_INFO("Patching strnicmp: %p -> %p\n", func.externAddr,
+                        __strnicmp);
+                *(size_t*)func.externAddr = (size_t)__strnicmp;
+            }
+        }
+        import.sect->data.restore_prev_protection();
+        
+    }
+}
+
 void instrumenter::clear_cov()
 {
     if (m_inst_mods.size() != 1) {
@@ -214,7 +283,7 @@ void instrumenter::translate_all_bbs()
         bbs_info[addr].orig_size = orig_size;
         ASSERT(inst_addr);
 
-        if (!m_opts.fix_dd_refs) continue; // don't fix jump in this mode
+        //if (!m_opts.fix_dd_refs) continue; // don't fix jump in this mode
 
         if (orig_size >= 5) {
             // Place jump
@@ -235,7 +304,8 @@ void instrumenter::translate_all_bbs()
             bbs_info[addr].bytes_taken = jump_size;
             //SAY_INFO("taken %p %d\n", addr, jump_size);
 
-        } else if (orig_size < 5 && orig_size >= 2) {
+        } 
+        else if (orig_size < 5 && orig_size >= 2) {
             // add to second pass
             bbs_info[addr].bytes_taken = 2;
             two_bytes_bbs.push_back(addr);
@@ -259,6 +329,7 @@ void instrumenter::translate_all_bbs()
                 }
             }
         }
+        //*(char*)addr = 0xcc; // FIXME:
     }
 
     SAY_INFO("Fixing dd refs...\n");
@@ -493,7 +564,11 @@ void instrumenter::instrument_module(size_t addr, const char* name)
         code_section->data.begin();
         if (m_opts.is_bbs_inst) {
             // fill text with int3s based on bbs file
-            auto offsets = helper::files2Vector(m_opts.bbs_path);
+            auto offsets = helper::files_to_vector(m_opts.bbs_path);
+            if (!offsets.size()) {
+                SAY_FATAL("Check file path %s, int's invalid\n",
+                        m_opts.bbs_path);
+            }
             uint32_t* ptr = (uint32_t*)&offsets[0][0];
             size_t offsets_not_in_code = 0;
             for (size_t i = 0; i < offsets[0].size() / 4; i++) {
@@ -696,6 +771,18 @@ DWORD instrumenter::handle_exception(EXCEPTION_DEBUG_INFO* dbg_info)
                     continue_status = DBG_CONTINUE;
                 }
             }
+
+            if (*(uint32_t*)((size_t)rec->ExceptionAddress + 
+                        MAGIC_OFFSET_STORE) == MARKER_STORE_CONTEXT) {
+                ASSERT(*(uint32_t*)((size_t)rec->ExceptionAddress + 
+                            MAGIC_OFFSET_RESTORE) ==
+                            MARKER_RESTORE_CONTINUE);
+                auto tgt_rip = (size_t)rec->ExceptionAddress + 
+                    MAGIC_OFFSET_CONTINUE;
+                SAY_INFO("PC for continuation on exception %p\n", tgt_rip);
+                //memcpy(&m_restore_ctx, m_ctx, sizeof(m_restore_ctx));
+                __debugbreak();
+            }
             break;
         }
         case STATUS_STACK_OVERFLOW: {
@@ -723,7 +810,7 @@ void instrumenter::print_stats()
     }
     SAY_INFO("Instrumenter stats: \n"
             "\t %d modules, callbacks [ %d dbg | %d veh ] "
-            "[ %d exceptions | %d avs | %d breakpoints ] \n"
+            "[ %d exceptions | %d avs | %d breakpoints | %d c++eh] \n"
             "\t %d pc redirections\n"
 
             "\t %d translated bb, skipped [ %d <5 | %d <2 ] \n"
@@ -731,6 +818,7 @@ void instrumenter::print_stats()
 
             m_inst_mods.size(), m_stats.dbg_callbacks, m_stats.veh_callbacks,
             m_stats.exceptions, m_stats.breakpoints, m_stats.avs,
+            m_stats.cpp_exceptions,
             m_stats.rip_redirections,
 
             cs.translated_bbs,
@@ -750,8 +838,56 @@ DWORD instrumenter::handle_veh(_EXCEPTION_POINTERS* ex_info) {
 #else
     size_t pc = m_ctx->Eip;
 #endif
-    if (translate_or_redirect(pc)) {
+    bool should_translate_or_redirect = false;
+    auto ex_record = ex_info->ExceptionRecord;
+    auto ex_code = ex_record->ExceptionCode;
+    switch (ex_code) {
+        case STATUS_ACCESS_VIOLATION:
+            if (ex_record->NumberParameters == 2 &&
+                    ex_record->ExceptionInformation[0] == 8 && // DEP
+                    ex_record->ExceptionInformation[1]) {
+                should_translate_or_redirect = true;
+            }
+            break;
+        case STATUS_BREAKPOINT:
+
+            if (*(uint32_t*)((size_t)pc + MAGIC_OFFSET_STORE) ==
+                        MARKER_STORE_CONTEXT) {
+                ASSERT(*(uint32_t*)(pc + MAGIC_OFFSET_RESTORE) ==
+                            MARKER_RESTORE_CONTINUE);
+                size_t tgt_rip = pc + MAGIC_OFFSET_CONTINUE;
+                memcpy(&m_restore_ctx, m_ctx, sizeof(m_restore_ctx));
+                m_restore_ctx.Rip = tgt_rip;
+                SAY_INFO("PC for continuation on exception %p\n", tgt_rip);
+                m_ctx->Rip++;
+                res = EXCEPTION_CONTINUE_EXECUTION;
+            }
+            else {
+                should_translate_or_redirect = true;
+            }
+            break;
+    }
+
+    if (should_translate_or_redirect &&
+            translate_or_redirect(pc)) {
         res = EXCEPTION_CONTINUE_EXECUTION;
+    }
+    else if (ex_code == 0xe06d7363){
+        m_stats.cpp_exceptions++;
+        //SAY_WARN("C++ exception: .exr %p, at %p\n",
+        //        ex_info->ExceptionRecord, 
+        //        ex_info->ExceptionRecord->ExceptionAddress);
+        if (m_restore_ctx.Rip) {
+            // restore previously saved context
+            memcpy(m_ctx, &m_restore_ctx, sizeof(*m_ctx));
+            res = EXCEPTION_CONTINUE_EXECUTION;
+        }
+        //res = EXCEPTION_CONTINUE_SEARCH;
+    }
+    else {
+        SAY_WARN("Unhandled exception: %x at %p\n",
+                ex_info->ExceptionRecord->ExceptionCode, 
+                ex_info->ExceptionRecord->ExceptionAddress);
     }
 
     m_ctx = 0;

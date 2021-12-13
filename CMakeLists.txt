@@ -8,6 +8,7 @@ add_subdirectory(third_party)
 
 include_directories(src)
 include_directories(${CMAKE_CURRENT_BINARY_DIR}/third_party/obj/wkit/include)
+include_directories(third_party)
 
 link_directories(${CMAKE_CURRENT_BINARY_DIR}/third_party/obj/wkit/lib)
 
@@ -22,6 +23,8 @@ add_library(boxer_lib
     src/translator.cpp
     src/dasm.cpp
     src/mutator.cpp
+    src/cov_tool.cpp
+    third_party/xxHash/xxhash.c
     )
 
 add_dependencies(boxer_lib xed)

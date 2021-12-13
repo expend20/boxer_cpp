@@ -166,13 +166,13 @@ size_t ArgvQuote(char *in, char *out) {
 }
 
 
-char *ArgvToCmd(int argc, char** argv) {
+char *ArgvToCmd(int argc, const char** argv) {
 	size_t len = 0;
 	int i;
 	char* buf, *ret;
 
 	for (i = 0; i < argc; i++)
-		len += ArgvQuote(argv[i], NULL) + 1;
+		len += ArgvQuote((char*)argv[i], NULL) + 1;
 
 
     if (!len) __debugbreak();
@@ -180,7 +180,7 @@ char *ArgvToCmd(int argc, char** argv) {
 	buf = ret = (char *)malloc(len);
 
 	for (i = 0; i < argc; i++) {
-		size_t l = ArgvQuote(argv[i], buf);
+		size_t l = ArgvQuote((char*)argv[i], buf);
 		buf += l;
 		*(buf++) = ' ';
 	}

@@ -293,7 +293,7 @@ void files2VectorDr(const char *path, std::vector<std::vector<uint8_t>> &res)
     FindClose(hFind);
 }
 
-std::vector<std::vector<uint8_t>> files2Vector(const char *path)
+std::vector<std::vector<uint8_t>> files_to_vector(const char *path)
 {
     std::vector<std::vector<uint8_t>> res;
 
@@ -388,6 +388,73 @@ std::string getLastErrorAsString()
     LocalFree(messageBuffer);
 
     return message;
+}
+
+int spawn(const char* cmd, uint32_t flags)
+{
+
+    STARTUPINFOA        si;
+    PROCESS_INFORMATION pi;
+    BOOL                inherit_handles = TRUE;
+    int                 res = -1;
+
+    memset(&si, 0, sizeof(si));
+    si.cb = sizeof(si);
+
+    memset(&pi, 0, sizeof(pi));
+
+    auto r = CreateProcessA(NULL, (LPSTR)cmd, NULL, NULL, inherit_handles,
+                flags, NULL, NULL, &si, &pi);
+    if (!r) {
+        SAY_FATAL("Can't create process %s %x, %s\n", cmd, flags,
+                getLastErrorAsString().c_str());
+    }
+
+    if (pi.hProcess) CloseHandle(pi.hProcess);
+    if (pi.hThread) CloseHandle(pi.hThread);
+
+    return res;
+
+}
+
+std::vector<const char*> skip_options(int argc, const char** argv,
+        const char* option, bool skipNext) {
+
+    std::vector<const char*> res;
+    for (size_t i = 0; i < argc; i++) {
+
+        auto isTargetOption = strcmp(option, argv[i]) == 0;
+        if (!isTargetOption) {
+            res.push_back(argv[i]);
+        } else {
+            if (skipNext) i++;
+        }
+    }
+
+    return res;
+}
+
+std::string hex_to_str(const char* buf, size_t size) {
+    std::string res;
+    for (size_t i = 0; i < size; i++) {
+        char bufi = buf[i];
+        char lower = ((bufi & 0x0f) >> 0);
+        if (lower < 10) {
+            lower += '0';
+        } else {
+            lower += 'A' - 10;
+        }
+        char upper = ((bufi & 0xf0) >> 4);
+        if (upper < 10) {
+            upper += '0';
+        } else {
+            upper += 'A' - 10;
+        }
+        res += upper;
+        res += lower;
+    }
+
+    return res;
 }
 
 }; // namespace helper

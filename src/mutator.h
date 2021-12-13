@@ -10,6 +10,8 @@ class mutator {
     public:
         std::vector<uint8_t> get_next_mutation();
         void add_sample_to_corpus(std::vector<uint8_t> &sample);
+        void add_sample_to_corpus(const uint8_t* data, uint32_t size);
+        size_t get_corpus_size(){ return m_corpus.size(); };
 
     private:
         bool m_timeMutations = false;

@@ -21,25 +21,34 @@ size_t mem_tool::get_bytes_left_by_addr(size_t addr) {
 
 size_t mem_tool::get_mem_by_addr(size_t addr) {
     ASSERT(addr >= m_addr_remote);
-    ASSERT(addr - m_addr_remote < m_data.size());
-    if (addr >= m_addr_remote && (addr - m_addr_remote < m_data.size())) {
-        return (size_t)&m_data[addr - m_addr_remote];
+    auto size = m_local_len ? m_local_len : m_data.size();
+    ASSERT(addr - m_addr_remote < size);
+
+    if (m_is_local) {
+        return addr;
     } else {
-        return 0;
+        return (size_t)&m_data[addr - m_addr_remote];
     }
 }
 
 size_t mem_tool::get_tgt_by_offset(size_t offset){
-    ASSERT(offset < m_data.size());
+    auto size = m_local_len ? m_local_len : m_data.size();
+    ASSERT(offset < size);
     return (size_t)(m_addr_remote + offset);
 }
 
 size_t mem_tool::get_tgt_by_local(size_t loc){
-    ASSERT(loc >= (size_t)&m_data[0]);
-    ASSERT(loc < (size_t)&m_data[m_data.size() - 1]);
-        return -1;
+    auto size = m_local_len ? m_local_len : m_data.size();
 
-    return get_tgt_by_offset(loc - (size_t)&m_data[0]);
+    if (m_is_local) {
+        ASSERT(loc >= m_addr_remote && loc <= m_addr_remote + size);
+        return loc;
+    }
+    else {
+        ASSERT(loc >= (size_t)&m_data[0] && 
+                loc < (size_t)&m_data[m_data.size() - 1]);
+        return m_addr_remote + (loc - (size_t)&m_data[0]);
+    }
 }
 
 size_t mem_tool::get_mem_by_offset(size_t offset) {

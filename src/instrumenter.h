@@ -10,6 +10,10 @@
 #include <string>
 #include <vector>
 
+#define MARKER_STORE_CONTEXT (0x1337 + 0)
+#define MARKER_RESTORE_CONTINUE (0x1337 + 1)
+
+
 struct instrumenter_bb_info {
     uint32_t orig_size = 0;
     uint32_t bytes_taken = 0;
@@ -20,6 +24,7 @@ struct instrumenter_stats {
     size_t veh_callbacks = 0;
     size_t exceptions = 0;
     size_t breakpoints = 0;
+    size_t cpp_exceptions = 0;
     size_t avs = 0;
     size_t rip_redirections = 0;
     size_t bb_skipped_less_5 = 0;
@@ -76,6 +81,7 @@ class instrumenter: public idebug_handler, public iveh_handler {
         void uninstrument_all();
 
         void print_stats();
+        instrumenter_stats* get_stats() { return &m_stats; };
 
         // opts setters
         void set_int3_inst_blind() { m_opts.is_int3_inst_blind = true; };
@@ -99,6 +105,8 @@ class instrumenter: public idebug_handler, public iveh_handler {
 
         void clear_cov();
         void clear_cmpcov();
+
+        void set_strcmpcov();
 
     private:
         //instrumenter(const instrumenter&) = delete;
@@ -134,6 +142,7 @@ class instrumenter: public idebug_handler, public iveh_handler {
 
         // valid only for VEH backend
         CONTEXT* m_ctx = NULL;
+        CONTEXT m_restore_ctx = {0};
 
 };
 

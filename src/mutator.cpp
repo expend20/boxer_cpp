@@ -2,6 +2,23 @@
 #include "mutator.h"
 #include <windows.h>
 
+void mutator::add_sample_to_corpus(const uint8_t* data, uint32_t size)
+{
+    ASSERT(m_corpus.size() == m_mutationStats.size());
+
+    if (!size) {
+        SAY_ERROR("Can't add sample with zero size\n");
+        return;
+    }
+
+    std::vector<uint8_t> s;
+    s.resize(size);
+    memcpy(&s[0], data, size);
+    m_corpus.push_back(s);
+
+    m_mutationStats.insert(std::make_pair(0, m_corpus.size() - 1));
+}
+
 void mutator::add_sample_to_corpus(std::vector<uint8_t> &sample)
 {
 

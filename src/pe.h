@@ -50,6 +50,7 @@ namespace pehelper {
     struct import_module {
         std::string name;
         std::vector<import_function> funcs;
+        section* sect = 0;
     };
 
     class pe {
@@ -83,6 +84,7 @@ namespace pehelper {
             section*          get_section(size_t addr);
             section*          get_section(std::string name);
             section*          get_section_by_idx(size_t idx);
+            std::vector<import_module>* get_imports(){ return &m_import; };
 
         #ifdef _WIN64
             runtime_function*  get_runtime_function(size_t rip);
@@ -92,7 +94,6 @@ namespace pehelper {
 
             void              extract_exception_directory();
             void              extract_sections();
-
             void              extract_imports();
     };
 

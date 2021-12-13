@@ -87,6 +87,7 @@ void pehelper::pe::extract_imports(){
 
         import_module mod;
         mod.name = dllName;
+        mod.sect = sect;
 
         while (origFirstThunk->u1.Ordinal) {
 
@@ -103,12 +104,13 @@ void pehelper::pe::extract_imports(){
                 impFunc.externAddr = (size_t)sect->data.get_tgt_by_local(
                         (size_t)firstThunk);
 
-                SAY_DEBUG("%p %s", impFunc.externAddr, impFunc.name.c_str());
+                SAY_DEBUG("%p %s.%s\n", impFunc.externAddr, dllName, 
+                        impFunc.name.c_str());
                 mod.funcs.push_back(impFunc);
 
             } else {
-                SAY_ERROR("Import by ordinal %x", origFirstThunk->u1.Ordinal);
-                // TODO:
+                SAY_ERROR("Import by ordinal %s:%x\n", dllName,
+                        origFirstThunk->u1.Ordinal);
             }
 
             origFirstThunk++;
@@ -340,7 +342,7 @@ pehelper::pe::pe(HANDLE process, size_t data) {
     m_img_header = mem_tool(m_process, m_remote_addr, 0x1000);
 
     extract_sections();
-    //extract_imports();
+    extract_imports();
     //extract_exception_directory();
 
 }

@@ -41,9 +41,10 @@ with open(filename, "wb") as fd:
                     blockoffs += struct.pack("<i", head - image_base)
                 if idaapi.is_call_insn(head):
                     prev_head = True
-                #print("%x" % head)
+                #if head != block.start_ea:
+                #    for xref in idautils.DataRefsTo(head):
+                #        print("%x %x" % (head, xref))
             if is_code(ida_bytes.get_full_flags(block.start_ea)):
-                # Write signed 32-bit offset from base of function
                 blockoffs += struct.pack("<i", block.start_ea - image_base)
         
         fd.write(blockoffs)

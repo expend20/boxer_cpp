@@ -534,7 +534,6 @@ uint32_t translator::translate_call_to_jump(
         dasm::opcode* op, uint8_t* buf, uint32_t buf_size, size_t target_addr)
 {
     // let's translate it to `push <orig_addr> & call`
-    
     // make push
     uint32_t inst_size = 0;
     //SAY_DEBUG("Making push... %p %d\n", buf, buf_size);
@@ -883,6 +882,14 @@ size_t translator::translate(size_t addr,
             }
         }
 
+        if (rip == 0x7ffb41d41b24
+               // || rip == 0x7ffb3ff201fd
+                ) {
+            SAY_INFO("*** setting break***\n");
+            *(char*)get_inst_ptr() = 0xcc;
+            adjust_inst_offset(1);
+        }
+
         uint32_t inst_sz = 0;
         if (m_opts.call_to_jmp &&
             op->category == XED_CATEGORY_CALL) {
@@ -900,10 +907,14 @@ size_t translator::translate(size_t addr,
         inst_count += 1;
 
         if (op->branch_disp_width) {
-            // keep track of jumps, while they are not poiting to the 
-            // instrumented code
-            m_remote_dd_refs.insert(
-                    m_inst_code->addr_remote() + m_inst_offset - 4);
+            //if (op->category == XED_CATEGORY_CALL && m_opts.call_to_jmp) {
+            //}
+            //else {
+                // keep track of jumps, while they are not poiting to the 
+                // instrumented code
+                m_remote_dd_refs.insert(
+                        m_inst_code->addr_remote() + m_inst_offset - 4);
+            //}
         }
 
         if (op->category == XED_CATEGORY_CALL) {
