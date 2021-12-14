@@ -5,7 +5,8 @@
 #include <memoryapi.h>
 
 bool mem_tool::is_in_rage_remote(size_t addr){
-    if (addr >= m_addr_remote && addr < (m_addr_remote + m_data.size())) {
+    auto size = m_local_len ? m_local_len : m_data.size();
+    if (addr >= m_addr_remote && addr < (m_addr_remote + size)) {
         return true;
     } else {
         return false;
@@ -20,9 +21,11 @@ size_t mem_tool::get_bytes_left_by_addr(size_t addr) {
 }
 
 size_t mem_tool::get_mem_by_addr(size_t addr) {
-    ASSERT(addr >= m_addr_remote);
-    auto size = m_local_len ? m_local_len : m_data.size();
-    ASSERT(addr - m_addr_remote < size);
+    if (!is_in_rage_remote(addr)) return 0;
+
+    //auto size = m_local_len ? m_local_len : m_data.size();
+    //ASSERT(addr >= m_addr_remote);
+    //ASSERT(addr - m_addr_remote < size);
 
     if (m_is_local) {
         return addr;

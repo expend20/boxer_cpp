@@ -21,7 +21,7 @@ LONG WINAPI veh_installer::static_handler(_EXCEPTION_POINTERS* ex_info) {
 
 veh_installer::veh_installer() {
 
-    if (m_inst) SAY_FATAL("Only one instance is allowed\n");
+    if (m_inst) SAY_FATAL("Only one instance of veh_handler allowed\n");
     m_inst = this;
     InitializeCriticalSection(&m_crit_sect);
 

@@ -10,68 +10,32 @@
 #define MAGIC_OFFSET_CONTINUE 0x2e
 
 #include <string.h>
-int __strcmp(char* str1, char* str2) {
-    SAY_INFO("strcmp: %s %s\n", str1, str2);
-    return strcmp(str1, str2);
+
+std::vector<strcmp_data>* instrumenter::get_strcmpcov()
+{
+    if (m_inst_mods.size() != 1) {
+        SAY_FATAL("Only one inst module is currently supported, got %d\n", 
+                m_inst_mods.size());
+    }
+    return m_strcmpcov.get_data();
 }
 
-int __stricmp(char* str1, char* str2) {
-    SAY_INFO("stricmp: %s %s\n", str1, str2);
-    return _stricmp(str1, str2);
+void instrumenter::clear_strcmpcov() 
+{
+    m_strcmpcov.clear_data();
 }
 
-int __strncmp(char* str1, char* str2, size_t n) {
-    SAY_INFO("strncmp: %s %s %d\n", str1, str2, n);
-    return strncmp(str1, str2, n);
-}
-
-int __strnicmp(char* str1, char* str2, size_t n) {
-    SAY_INFO("strnicmp: %s %s %d\n", str1, str2, n);
-    return _strnicmp(str1, str2, n);
-}
-
-// FIXME: think about the interface
-// FIXME: fix for remote process
-void instrumenter::set_strcmpcov() {
-
+void instrumenter::set_strcmpcov() 
+{
+    if (m_inst_mods.size() != 1) {
+        SAY_FATAL("Only one inst module is currently supported, got %d\n", 
+                m_inst_mods.size());
+    }
     auto it = m_inst_mods.begin();
     auto mod = &(it->second);
 
     auto imports = mod->pe.get_imports();
-    for (auto &import: *imports) {
-
-        SAY_INFO("import %s\n", import.name.c_str());
-
-        import.sect->data.make_writeable();
-
-        for (auto &func: import.funcs) {
-            //SAY_INFO("%s.%s %p\n", import.name.c_str(), func.name.c_str(),
-            //        func.externAddr);
-
-            if (strstr(func.name.c_str(), "strcmp")) {
-                SAY_INFO("Patching strcmp: %p -> %p\n", func.externAddr,
-                        __strcmp);
-                *(size_t*)func.externAddr = (size_t)__strcmp;
-            }
-            else if (strstr(func.name.c_str(), "stricmp")) {
-                SAY_INFO("Patching stricmp: %p -> %p\n", func.externAddr,
-                        __stricmp);
-                *(size_t*)func.externAddr = (size_t)__stricmp;
-            }
-            else if (strstr(func.name.c_str(), "strncmp")) {
-                SAY_INFO("Patching strncmp: %p -> %p\n", func.externAddr,
-                        __strncmp);
-                *(size_t*)func.externAddr = (size_t)__strncmp;
-            }
-            else if (strstr(func.name.c_str(), "strnicmp")) {
-                SAY_INFO("Patching strnicmp: %p -> %p\n", func.externAddr,
-                        __strnicmp);
-                *(size_t*)func.externAddr = (size_t)__strnicmp;
-            }
-        }
-        import.sect->data.restore_prev_protection();
-        
-    }
+    m_strcmpcov.install(imports);
 }
 
 void instrumenter::clear_cov()

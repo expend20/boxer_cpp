@@ -76,7 +76,9 @@ struct fuzzer_stats {
     ULONGLONG stable_cov = 0;
     ULONGLONG unstable_cov = 0;
     ULONGLONG cmpcov_bits = 0;
-    ULONGLONG mutator_samples = 0;
+    ULONGLONG new_bits = 0;
+    ULONGLONG new_inc = 0;
+    ULONGLONG strcmp = 0;
 };
 
 class in_process_fuzzer {
@@ -91,12 +93,18 @@ class in_process_fuzzer {
         void set_input(const char* path);
         void set_output(const char* path);
         void set_cmin_mode(){ m_cmin_mode = true; };
+        void set_zero_corp_sample_size(uint32_t v) {
+            m_zero_corp_sample_size = v; 
+            SAY_INFO("*** set to %d\n", v);
+        };
 
     private:
         void print_stats(bool force);
         void process_input_corpus();
         void process_output_corpus();
         void restart_if_should();
+        std::vector<std::vector<uint8_t>>
+            try_to_fix_strings(uint8_t* data, uint32_t sz);
 
     private:
         in_process_dll_harness* m_harness_inproc = 0;
@@ -106,11 +114,13 @@ class in_process_fuzzer {
         uint32_t m_stats_sec_timeout = 3;
 
         fuzzer_stats m_stats;
-        cov_tool m_cov_tool;
-        cov_tool m_cmpcov_tool;
+        cov_tool m_cov_tool_bits;
+        cov_tool m_cov_tool_inc;
+        cov_tool m_cov_tool_cmp;
 
         const char* m_input_corpus_path = 0;
         const char* m_output_corpus_path = 0;
+        uint32_t m_zero_corp_sample_size = 12 * 1024;
 
         bool m_cmin_mode = false;
 };
@@ -138,7 +148,9 @@ void in_process_fuzzer::process_input_corpus()
     if (!in_corpus.size()) {
         // no input corpus, put at least something
         std::vector<uint8_t> sample;
-        sample.resize(256);
+        SAY_INFO("%d\n", m_zero_corp_sample_size);
+        sample.resize(m_zero_corp_sample_size);
+
         for (uint32_t i = 0; i < sample.size(); i++) {
             sample[i] = rand() % 256;
         }
@@ -188,14 +200,16 @@ void in_process_fuzzer::print_stats(bool force)
 
         ULONGLONG newExecs = m_stats.execs - prevExecs;
         auto fcps = (double)newExecs / m_stats_sec_timeout;
-        SAY_INFO("%8.2f fcps (%8.2f avg) %10d samples\n"
+        SAY_INFO("%8.2f fcps (%8.2f avg) %10d new bits %10d new inc\n"
                 "%10d total execs, %10d new execs\n"
-                "%10d stable cov, %10d unstable cov, %10d cmpcov bits\n",
+                "%10d stable cov, %10d unstable cov, %10d cmpcov bits\n"
+                "%10d strcmp\n",
                 fcps,
                 (double)m_stats.execs / (printStatsCount * m_stats_sec_timeout),
-                m_stats.mutator_samples,
+                m_stats.new_bits, m_stats.new_inc,
                 m_stats.execs, newExecs,
-                m_stats.stable_cov, m_stats.unstable_cov, m_stats.cmpcov_bits
+                m_stats.stable_cov, m_stats.unstable_cov, m_stats.cmpcov_bits,
+                m_stats.strcmp
                 );
         m_inst->print_stats();
 
@@ -220,6 +234,7 @@ bool in_process_fuzzer::cov_check_by_hash(const uint8_t* data, uint32_t size,
     for (; i < 3; i++) {
         // clear coverage
         m_inst->clear_cov();
+        // don't need to clear cmpcov because it's only increasing bits
 
         // WANRING: don't place any new code until restore mark, otherwise
         // adjust offsets in the handle.
@@ -239,7 +254,7 @@ bool in_process_fuzzer::cov_check_by_hash(const uint8_t* data, uint32_t size,
         ASSERT(cov && cov_sz);
 
         auto h = cov_tool::get_cov_hash(cov, cov_sz);
-        if (!hashes.size() && !m_cov_tool.is_new_cov_hash(h, false)) {
+        if (!hashes.size() && !m_cov_tool_bits.is_new_cov_hash(h, false)) {
             // first iteration without new cov
             break;
         }
@@ -247,12 +262,12 @@ bool in_process_fuzzer::cov_check_by_hash(const uint8_t* data, uint32_t size,
         if (hashes.size() && hashes.find(h) != hashes.end()) {
             // we found one stable coverage, check it again, with state
             // modification
-            if (!m_cov_tool.is_new_cov_hash(h)) {
+            if (!m_cov_tool_bits.is_new_cov_hash(h)) {
                 // oops, stable cov hash is already processed
                 break;
             }
             // we've got new stable hash
-            m_cov_tool.is_new_cov_hash(h);
+            m_cov_tool_bits.is_new_cov_hash(h);
             res = true;
             break;
         }
@@ -265,7 +280,7 @@ bool in_process_fuzzer::cov_check_by_hash(const uint8_t* data, uint32_t size,
             m_stats.unstable_cov++;
             // add all unstable hashes to the cov_tool's internal state
             for (auto &h : hashes) {
-                m_cov_tool.is_new_cov_hash(h);
+                m_cov_tool_bits.is_new_cov_hash(h);
             }
             if (is_unstable) *is_unstable = true;
         }
@@ -283,35 +298,44 @@ void in_process_fuzzer::run_one_input(const uint8_t* data, uint32_t size,
 
     bool is_unstable = false;
     bool should_add_to_corpus = false;
-    if (cov_check_by_hash(data, size, &is_unstable)) {
+    bool should_save_to_disk = false;
+    // stability is judged based on bits not inc
+    auto new_hash_by_bits = cov_check_by_hash(data, size, &is_unstable);
+    if (is_unstable) return;
 
+    {
         uint32_t cov_sz = 0;
         uint8_t* cov = 0;
         cov = m_inst->get_cov(&cov_sz);
-        if (m_cov_tool.is_new_cov_bits(cov, cov_sz)) 
+        if (m_cov_tool_bits.is_new_cov_bits(cov, cov_sz)) {
+            m_stats.new_bits++;
+            should_save_to_disk = true;
+        }
+        if (m_cov_tool_inc.is_new_greater_byte(cov, cov_sz)) {
+            m_stats.new_inc++;
             should_add_to_corpus = true;
+        }
     }
 
-    if (is_unstable) return;
 
     uint32_t cmpcov_sz = 0;
     uint8_t* cmpcov = 0;
     cmpcov = m_inst->get_cmpcov(&cmpcov_sz);
 
     // we call this comparison in any case, because we want to have it updated
-    bool is_cmpcov_bits = m_cmpcov_tool.is_new_cov_bits(cmpcov, cmpcov_sz);
+    bool is_cmpcov_bits = m_cov_tool_cmp.is_new_cov_bits(cmpcov, cmpcov_sz);
     if (is_cmpcov_bits) {
         m_stats.cmpcov_bits++;
         should_add_to_corpus = true;
+        should_save_to_disk = true;
     }
 
-    if (should_add_to_corpus) {
+    if (should_add_to_corpus || should_save_to_disk) {
         // add to corpus, we rely here on the fact that current coverage is
         // stable
         m_mutator.add_sample_to_corpus(data, size);
-        m_stats.mutator_samples++;
 
-        if (save_to_disk) {
+        if (save_to_disk && should_save_to_disk) {
             // save to disk
             auto hash = cov_tool::get_cov_hash(data, size);
             auto hash_str = helper::hex_to_str((const char*)&hash, 
@@ -325,6 +349,95 @@ void in_process_fuzzer::run_one_input(const uint8_t* data, uint32_t size,
 
 }
 
+std::vector<std::vector<uint8_t>>
+in_process_fuzzer::try_to_fix_strings(uint8_t* data, uint32_t sz)
+{
+    auto cmps = m_inst->get_strcmpcov();
+    auto cmps_sz = cmps->size();
+
+    std::vector<std::vector<uint8_t>> res;
+
+    if (!cmps_sz) return res;
+
+    for (uint32_t ia = 0; ia < cmps_sz; ia++) {
+        // find one random failed string comparison
+        auto cmpcase = &((*cmps)[ia]);
+
+        //SAY_INFO("%p %x %p %x, sample %p %x\n", 
+        //        &cmpcase->buf1[0], cmpcase->buf1.size(),
+        //        &cmpcase->buf2[0], cmpcase->buf2.size(),
+		//		data, sz);
+
+		// we can try to predict which buffer belongs to the sample, e.g.
+        // if there are no printable characters, we can assume that
+        uint32_t idx = 1;
+        for (uint32_t i = 0; i < 4 && i < cmpcase->buf2.size(); i++) {
+            if (cmpcase->buf2[i] >= 0x7f || cmpcase->buf2[i] < 0x20) {
+                idx = 0;
+                break;
+            }
+        }
+        std::vector<uint8_t>* cmp = &cmpcase->buf2;
+        std::vector<uint8_t>* cmp_needed = &cmpcase->buf1;
+        if (idx == 0) {
+            cmp = &cmpcase->buf1;
+            cmp_needed = &cmpcase->buf2;
+        }
+
+        bool patched = false;
+        for (uint32_t k = 0; k < 2 && !patched; k++) {
+            if (k == 1) { // switch buffers on second iteration
+                if (cmp == &cmpcase->buf1) {
+                    cmp = &cmpcase->buf2;
+                    cmp_needed = &cmpcase->buf1;
+                }
+                else {
+                    cmp = &cmpcase->buf1;
+                    cmp_needed = &cmpcase->buf2;
+                }
+            }
+            // search the pattern in sample data
+            for (uint32_t i = 0; i < sz - cmp->size(); i++) {
+
+                if (!memcmp(&(*cmp)[0], &data[i], cmp->size())) {
+                    // we've found the place, at lease we believe so :)
+                    //SAY_INFO("offset found: 0x%x\n", i);
+                    std::vector<uint8_t> new_sample;
+                    new_sample.resize(sz);
+                    memcpy(&new_sample[0], data, sz);
+
+                    memcpy(&new_sample[i], &(*cmp_needed)[0], cmp->size());
+                    if (cmpcase->should_add_zero &&
+                            sz - (cmp->size() + i) >= 1) {
+                        new_sample[i + cmp->size()] = 0;
+                    }
+
+                    static std::set<std::string> fixed_strings;
+                    std::string s = (char*)&new_sample[i];
+                    if (fixed_strings.find(s) == fixed_strings.end()) {
+                        SAY_INFO("fixed string: %x %x %s\n", i, cmp->size(),
+                                &new_sample[i]);
+                        fixed_strings.insert(std::move(s));
+                        // FIXME:
+                        //if (strstr("NIKON", (const char*)&data[i])) {
+                        //    helper::writeFile("str_nikon2", (char*)data, sz, "wb");
+                        //    memcpy(&data[i], &(*cmp)[0], cmp->size());
+                        //    helper::writeFile("str_nikon1", (char*)data, sz, "wb");
+                        //}
+                    }
+                    res.push_back(std::move(new_sample));
+                    patched = true;
+                    break;
+                }
+            }
+        }
+    }
+    SAY_INFO("strcmp inputcases: %d, samples patched: %d\n", 
+            cmps_sz, res.size());
+    return std::move(res);
+
+}
+
 void in_process_fuzzer::run() 
 {
     process_output_corpus();
@@ -332,7 +445,7 @@ void in_process_fuzzer::run()
 
     if (m_cmin_mode) {
         SAY_INFO("Cmin mode, %d samples saved, exiting...\n", 
-                m_stats.mutator_samples);
+                m_stats.new_bits);
         return;
     }
 
@@ -352,11 +465,24 @@ void in_process_fuzzer::run()
         //
         auto new_sample = m_mutator.get_next_mutation();
 
+        m_inst->clear_strcmpcov();
         //
         // run code
         //
         //SAY_INFO("sample: %p %x\n", &new_sample[0], new_sample.size());
         run_one_input(&new_sample[0], new_sample.size());
+
+        // attempt to find and patch strings 
+
+
+        if (m_stats.execs % 1000 == 0) {
+            auto str_samples = try_to_fix_strings(
+                    &new_sample[0], new_sample.size());
+            for (auto &str_sample: str_samples) {
+                run_one_input(&str_sample[0], str_sample.size());
+                m_stats.strcmp++;
+            }
+        }
 
     }while(1);
 }
@@ -446,14 +572,21 @@ int main(int argc, const char** argv)
     auto stop_at = GetOption("--stop_at", argc, argv);
     if (stop_at) {
         uint32_t cycles = atoi(stop_at);
-        SAY_ERROR("stop_at = %d\n", cycles);
+        SAY_INFO("stop_at = %d\n", cycles);
         ins.set_stop_at(cycles);
     }
     auto covbuf_size = GetOption("--covbuf_size", argc, argv);
     if (covbuf_size) {
         uint32_t v = atoi(covbuf_size) * 1024;
-        SAY_ERROR("covbuf_size = %d\n", v);
+        SAY_INFO("covbuf_size = %d\n", v);
         ins.set_covbuf_size(v);
+    }
+    uint32_t zero_corp_sample_size_val = 0;
+    auto zero_corp_sample_size = GetOption("--zero_corp_sample_size", 
+            argc, argv);
+    if (zero_corp_sample_size) {
+        zero_corp_sample_size_val = atoi(zero_corp_sample_size);
+        SAY_INFO("zero_corp_sample_size = %d\n", zero_corp_sample_size_val);
     }
 
     auto dll = GetOption("--dll", argc, argv);
@@ -509,7 +642,7 @@ int main(int argc, const char** argv)
         libs_resolved.push_back(lib);
         ins.explicit_instrument_module(lib, mod_name);
     }
-    ins.set_strcmpcov();
+    //ins.set_strcmpcov();
 
     auto fuzz = in_process_fuzzer(&in_proc_harn, &ins);
     if (input_dir)
@@ -518,6 +651,8 @@ int main(int argc, const char** argv)
         fuzz.set_output(output_dir);
     if (is_cmin)
         fuzz.set_cmin_mode();
+    if (zero_corp_sample_size_val)
+        fuzz.set_zero_corp_sample_size(zero_corp_sample_size_val);
     fuzz.run();
 
     ins.print_stats();

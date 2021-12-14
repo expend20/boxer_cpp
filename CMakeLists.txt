@@ -24,6 +24,7 @@ add_library(boxer_lib
     src/dasm.cpp
     src/mutator.cpp
     src/cov_tool.cpp
+    src/strcov.cpp
     third_party/xxHash/xxhash.c
     )
 
