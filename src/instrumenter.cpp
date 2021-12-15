@@ -93,6 +93,12 @@ uint8_t* instrumenter::get_cmpcov(uint32_t* size)
     if (size) 
         *size = (uint32_t)mod->translator.get_cmpinst_size();
 
+    static bool is_shown = false;
+    if (!is_shown) {
+        SAY_INFO("cmpcov size %d\n", mod->translator.get_cmpinst_size());
+        is_shown = true;
+    }
+
     return res;
 }
 
@@ -795,7 +801,7 @@ void instrumenter::print_stats()
 DWORD instrumenter::handle_veh(_EXCEPTION_POINTERS* ex_info) {
     m_stats.veh_callbacks++;
     m_ctx = ex_info->ContextRecord;
-    auto res = EXCEPTION_CONTINUE_SEARCH;
+    auto res = 0;
 
 #ifdef _WIN64
     size_t pc = m_ctx->Rip;
@@ -803,59 +809,65 @@ DWORD instrumenter::handle_veh(_EXCEPTION_POINTERS* ex_info) {
     size_t pc = m_ctx->Eip;
 #endif
     bool should_translate_or_redirect = false;
+    bool processed = false;
     auto ex_record = ex_info->ExceptionRecord;
     auto ex_code = ex_record->ExceptionCode;
-    switch (ex_code) {
-        case STATUS_ACCESS_VIOLATION:
-            if (ex_record->NumberParameters == 2 &&
-                    ex_record->ExceptionInformation[0] == 8 && // DEP
-                    ex_record->ExceptionInformation[1]) {
-                should_translate_or_redirect = true;
-            }
-            break;
-        case STATUS_BREAKPOINT:
+    do { 
+        switch (ex_code) {
+            case STATUS_ACCESS_VIOLATION:
+                if (ex_record->NumberParameters == 2 &&
+                        ex_record->ExceptionInformation[0] == 8 && // DEP
+                        ex_record->ExceptionInformation[1]) {
+                    should_translate_or_redirect = true;
+                }
+                break;
+            case STATUS_BREAKPOINT:
 
-            if (*(uint32_t*)((size_t)pc + MAGIC_OFFSET_STORE) ==
+                if (*(uint32_t*)((size_t)pc + MAGIC_OFFSET_STORE) ==
                         MARKER_STORE_CONTEXT) {
-                ASSERT(*(uint32_t*)(pc + MAGIC_OFFSET_RESTORE) ==
+                    ASSERT(*(uint32_t*)(pc + MAGIC_OFFSET_RESTORE) ==
                             MARKER_RESTORE_CONTINUE);
-                size_t tgt_rip = pc + MAGIC_OFFSET_CONTINUE;
-                memcpy(&m_restore_ctx, m_ctx, sizeof(m_restore_ctx));
-                m_restore_ctx.Rip = tgt_rip;
-                SAY_INFO("PC for continuation on exception %p\n", tgt_rip);
-                m_ctx->Rip++;
-                res = EXCEPTION_CONTINUE_EXECUTION;
-            }
-            else {
-                should_translate_or_redirect = true;
-            }
-            break;
-    }
-
-    if (should_translate_or_redirect &&
-            translate_or_redirect(pc)) {
-        res = EXCEPTION_CONTINUE_EXECUTION;
-    }
-    else if (ex_code == 0xe06d7363){
-        m_stats.cpp_exceptions++;
-        //SAY_WARN("C++ exception: .exr %p, at %p\n",
-        //        ex_info->ExceptionRecord, 
-        //        ex_info->ExceptionRecord->ExceptionAddress);
-        if (m_restore_ctx.Rip) {
-            // restore previously saved context
-            memcpy(m_ctx, &m_restore_ctx, sizeof(*m_ctx));
-            res = EXCEPTION_CONTINUE_EXECUTION;
+                    size_t tgt_rip = pc + MAGIC_OFFSET_CONTINUE;
+                    memcpy(&m_restore_ctx, m_ctx, sizeof(m_restore_ctx));
+                    m_restore_ctx.Rip = tgt_rip;
+                    SAY_INFO("PC for continuation on exception set %p\n", 
+                            tgt_rip);
+                    m_ctx->Rip++;
+                    res = 1;
+                }
+                else {
+                    should_translate_or_redirect = true;
+                }
+                break;
         }
-        //res = EXCEPTION_CONTINUE_SEARCH;
-    }
-    else {
+        if (res) break;
+
+        if (!res && should_translate_or_redirect && translate_or_redirect(pc)) {
+            res = 1;
+            break;
+        }
+
+        if (ex_code == 0xe06d7363){
+            m_stats.cpp_exceptions++;
+            //SAY_WARN("C++ exception: .exr %p, at %p\n",
+            //        ex_info->ExceptionRecord, 
+            //        ex_info->ExceptionRecord->ExceptionAddress);
+            if (m_restore_ctx.Rip) {
+                // restore previously saved context
+                memcpy(m_ctx, &m_restore_ctx, sizeof(*m_ctx));
+                res = 1;
+                break;
+            }
+        }
+
         SAY_WARN("Unhandled exception: %x at %p\n",
                 ex_info->ExceptionRecord->ExceptionCode, 
                 ex_info->ExceptionRecord->ExceptionAddress);
-    }
+
+    } while(0);
 
     m_ctx = 0;
-    return res;
+    return res == 0 ? EXCEPTION_CONTINUE_SEARCH : EXCEPTION_CONTINUE_EXECUTION;
 }
 
 DWORD instrumenter::handle_debug_event(DEBUG_EVENT* dbg_event,

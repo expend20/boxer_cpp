@@ -376,6 +376,7 @@ void translator::adjust_cov_offset(size_t v)
     if (m_cov_offset >= m_cov_buf->size()) {
         ASSERT(m_cov_offset % m_cov_buf->size() == 0);
         m_cov_offset = 0;
+        SAY_INFO("Cov buf rounded\n");
     }
 }
 
@@ -917,7 +918,7 @@ size_t translator::translate(size_t addr,
             //}
         }
 
-        if (op->category == XED_CATEGORY_CALL) {
+        if (op->category == XED_CATEGORY_CALL && m_opts.call_to_jmp) {
             break;
         }
         if (op->category == XED_CATEGORY_RET) {

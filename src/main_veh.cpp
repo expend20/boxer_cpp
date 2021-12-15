@@ -84,7 +84,7 @@ struct fuzzer_stats {
 class in_process_fuzzer {
     public: 
         in_process_fuzzer( in_process_dll_harness* harness, 
-                instrumenter* inst);
+                instrumenter* inst, uint32_t mutator_density = 0);
         void run();
         void run_one_input(const uint8_t* data, uint32_t size, 
                 bool save_to_disk = true);
@@ -95,8 +95,10 @@ class in_process_fuzzer {
         void set_cmin_mode(){ m_cmin_mode = true; };
         void set_zero_corp_sample_size(uint32_t v) {
             m_zero_corp_sample_size = v; 
-            SAY_INFO("*** set to %d\n", v);
         };
+        void set_inccov(){ m_is_inccov = true; };
+        void set_hashcov(){ m_is_hashcov = true; };
+        void set_bitcov(){ m_is_bitcov = true; };
 
     private:
         void print_stats(bool force);
@@ -123,6 +125,9 @@ class in_process_fuzzer {
         uint32_t m_zero_corp_sample_size = 12 * 1024;
 
         bool m_cmin_mode = false;
+        bool m_is_inccov = false;
+        bool m_is_hashcov = false;
+        bool m_is_bitcov = false;
 };
 
 void in_process_fuzzer::set_input(const char* path)
@@ -148,7 +153,6 @@ void in_process_fuzzer::process_input_corpus()
     if (!in_corpus.size()) {
         // no input corpus, put at least something
         std::vector<uint8_t> sample;
-        SAY_INFO("%d\n", m_zero_corp_sample_size);
         sample.resize(m_zero_corp_sample_size);
 
         for (uint32_t i = 0; i < sample.size(); i++) {
@@ -173,13 +177,14 @@ void in_process_fuzzer::process_output_corpus()
 
 in_process_fuzzer::in_process_fuzzer(
         in_process_dll_harness* harness, 
-        instrumenter* inst) : 
+        instrumenter* inst,
+        uint32_t mutator_density) : 
     m_harness_inproc(harness), 
     m_inst(inst)
 {
     m_mutator = mutator();
-    // init mutator
-
+    if (mutator_density)
+        m_mutator.set_density(mutator_density);
 }
 
 void in_process_fuzzer::restart_if_should()
@@ -267,7 +272,7 @@ bool in_process_fuzzer::cov_check_by_hash(const uint8_t* data, uint32_t size,
                 break;
             }
             // we've got new stable hash
-            m_cov_tool_bits.is_new_cov_hash(h);
+            //m_cov_tool_bits.is_new_cov_hash(h);
             res = true;
             break;
         }
@@ -303,48 +308,60 @@ void in_process_fuzzer::run_one_input(const uint8_t* data, uint32_t size,
     auto new_hash_by_bits = cov_check_by_hash(data, size, &is_unstable);
     if (is_unstable) return;
 
-    {
-        uint32_t cov_sz = 0;
-        uint8_t* cov = 0;
-        cov = m_inst->get_cov(&cov_sz);
-        if (m_cov_tool_bits.is_new_cov_bits(cov, cov_sz)) {
-            m_stats.new_bits++;
-            should_save_to_disk = true;
-        }
-        if (m_cov_tool_inc.is_new_greater_byte(cov, cov_sz)) {
-            m_stats.new_inc++;
+    if (new_hash_by_bits) {
+        if (m_is_hashcov) {
             should_add_to_corpus = true;
         }
+        else {
+            uint32_t cov_sz = 0;
+            uint8_t* cov = 0;
+            cov = m_inst->get_cov(&cov_sz);
+            if (m_is_bitcov && m_cov_tool_bits.is_new_cov_bits(cov, cov_sz)) {
+                m_stats.new_bits++;
+                should_add_to_corpus = true;
+                should_save_to_disk = true;
+            }
+            if (m_is_inccov &&
+                    m_cov_tool_inc.is_new_greater_byte(cov, cov_sz)) {
+                m_stats.new_inc++;
+                should_add_to_corpus = true;
+            }
+        }
     }
-
 
     uint32_t cmpcov_sz = 0;
     uint8_t* cmpcov = 0;
     cmpcov = m_inst->get_cmpcov(&cmpcov_sz);
 
-    // we call this comparison in any case, because we want to have it updated
-    bool is_cmpcov_bits = m_cov_tool_cmp.is_new_cov_bits(cmpcov, cmpcov_sz);
-    if (is_cmpcov_bits) {
+    // cmpcov is bits only, so we con't clear it, we only check for new ones;
+    // thus we can use hash to speed up the process
+    auto h = cov_tool::get_cov_hash(cmpcov, cmpcov_sz);
+    if (m_cov_tool_cmp.is_new_cov_hash(h)) {
         m_stats.cmpcov_bits++;
         should_add_to_corpus = true;
         should_save_to_disk = true;
     }
+    // we call this comparison in any case, because we want to have it updated
+    //bool is_cmpcov_bits = m_cov_tool_cmp.is_new_cov_bits(cmpcov, cmpcov_sz);
+    //if (is_cmpcov_bits) {
+    //    m_stats.cmpcov_bits++;
+    //    should_add_to_corpus = true;
+    //    should_save_to_disk = true;
+    //}
 
-    if (should_add_to_corpus || should_save_to_disk) {
-        // add to corpus, we rely here on the fact that current coverage is
-        // stable
+    if (should_add_to_corpus) {
         m_mutator.add_sample_to_corpus(data, size);
+    }
 
-        if (save_to_disk && should_save_to_disk) {
-            // save to disk
-            auto hash = cov_tool::get_cov_hash(data, size);
-            auto hash_str = helper::hex_to_str((const char*)&hash, 
-                    sizeof(hash));
+    if (save_to_disk && should_save_to_disk) {
+        // save to disk
+        auto hash = cov_tool::get_cov_hash(data, size);
+        auto hash_str = helper::hex_to_str((const char*)&hash, 
+                sizeof(hash));
 
-            std::string path = m_output_corpus_path;
-            path = path + "\\" + hash_str.c_str();
-            helper::writeFile(path.c_str(), (const char*)data, size, "wb");
-        }
+        std::string path = m_output_corpus_path;
+        path = path + "\\" + hash_str.c_str();
+        helper::writeFile(path.c_str(), (const char*)data, size, "wb");
     }
 
 }
@@ -496,78 +513,97 @@ int main(int argc, const char** argv)
     auto ins = instrumenter();
     std::vector<const char*> cov_mods;
     GetOptionAll("--cov", argc, argv, cov_mods);
+    if (cov_mods.size() != 1) {
+        SAY_FATAL("Specify one --cov module\n");
+    }
 
     auto is_inst_bbs_path = GetOption("--inst_bbs_file", argc, argv);
     if (is_inst_bbs_path) {
-        SAY_INFO("inst_bbs_file = %s\n", is_inst_bbs_path);
         ins.set_bbs_inst();
         ins.set_bbs_path(is_inst_bbs_path);
     }
-    auto is_inst_int3_blind = GetBinaryOption("--inst_int3_blind", 
-            argc, argv, false);
-    if (is_inst_int3_blind) {
-        SAY_INFO("inst_int3_blind = true\n");
-        ins.set_int3_inst_blind();
-    }
+    SAY_INFO("inst_bbs_file = %s\n", is_inst_bbs_path);
+
     auto is_inst_bbs_all = GetBinaryOption("--inst_bbs_all", 
             argc, argv, true);
     if (is_inst_bbs_all) {
-        SAY_INFO("inst_bbs_all = true\n");
         ins.set_bbs_inst_all();
     }
+    SAY_INFO("inst_bbs_all = %d\n", is_inst_bbs_all);
+
     auto is_call_to_jump = GetBinaryOption("--call_to_jump", 
-            argc, argv, true);
+            argc, argv, false);
     if (is_call_to_jump) {
-        SAY_INFO("call_to_jump = true\n");
         ins.set_call_to_jump();
     }
+    SAY_INFO("call_to_jump = %d\n", is_call_to_jump);
+
     auto is_skip_small_bb = GetBinaryOption("--skip_small_bb", 
             argc, argv, false);
     if (is_skip_small_bb) {
-        SAY_INFO("skip_small_bb = true\n");
         ins.set_skip_small_bb();
     }
+    SAY_INFO("skip_small_bb = %d\n", is_skip_small_bb);
 
     auto is_fix_dd_refs = GetBinaryOption("--fix_dd_refs", argc, argv, true);
     if (is_fix_dd_refs) {
-        SAY_INFO("fix_dd_refs = true\n");
         ins.set_fix_dd_refs();
     }
+    SAY_INFO("fix_dd_refs = %d\n", is_fix_dd_refs);
 
-    auto is_inst_debug = GetBinaryOption("--inst_debug", argc, argv, false);
-    if (is_inst_debug) {
-        SAY_INFO("inst_debug = true\n");
-        ins.set_debug();
-    }
+    auto is_hashcov = GetBinaryOption("--hashcov", argc, argv, false);
+    SAY_INFO("hashcov = %d\n", is_hashcov);
+
+    auto is_inccov = GetBinaryOption("--inccov", argc, argv, true);
+    SAY_INFO("inccov = %d\n", is_inccov);
+
+    auto is_bitcov = GetBinaryOption("--bitcov", argc, argv, true);
+    SAY_INFO("bitcov = %d\n", is_bitcov);
 
     auto is_cmpcov = GetBinaryOption("--cmpcov", argc, argv, true);
     if (is_cmpcov) {
-        SAY_INFO("cmpcov = true\n");
         ins.set_trans_cmpcov();
     }
+    SAY_INFO("cmpcov = %d\n", is_cmpcov);
+
+    auto is_strcmpcov = GetBinaryOption(
+            "--strcmp", argc, argv, false);
+    SAY_INFO("strcmpcov = %d\n", is_strcmpcov);
+
+    auto is_inst_debug = GetBinaryOption("--inst_debug", argc, argv, false);
+    if (is_inst_debug) {
+        ins.set_debug();
+    }
+    SAY_INFO("inst_debug = %d\n", is_inst_debug);
+
     auto is_trans_debug = GetBinaryOption("--trans_debug", argc, argv, false);
     if (is_trans_debug) {
-        SAY_INFO("is_trans_debug = true\n");
         ins.set_trans_debug();
     }
+    SAY_INFO("trans_debug = %d\n", is_trans_debug);
+
     auto is_disasm = GetBinaryOption("--disasm", argc, argv, false);
     if (is_disasm) {
-        SAY_INFO("disasm = true\n");
         ins.set_trans_disasm();
     }
+    SAY_INFO("disasm = %d\n", is_disasm);
+
     auto is_single_step = GetBinaryOption(
             "--single_step", argc, argv, false);
     if (is_single_step) {
-        SAY_INFO("single_step = true\n");
         ins.set_trans_single_step();
     }
+    SAY_INFO("single_step = %d\n", is_single_step);
+
     auto is_show_flow = GetBinaryOption(
             "--show_flow", argc, argv, false);
     if (is_show_flow) {
-        SAY_INFO("show_flow = true\n");
         ins.set_show_flow();
     }
+    SAY_INFO("show_flow = %d\n", is_show_flow);
+
     auto is_cmin = GetBinaryOption( "--cmin", argc, argv, false);
+    SAY_INFO("cmin = %d\n", is_cmin);
 
     auto stop_at = GetOption("--stop_at", argc, argv);
     if (stop_at) {
@@ -575,42 +611,48 @@ int main(int argc, const char** argv)
         SAY_INFO("stop_at = %d\n", cycles);
         ins.set_stop_at(cycles);
     }
+
     auto covbuf_size = GetOption("--covbuf_size", argc, argv);
+    uint32_t covbuf_size_v = 64 * 1024;
     if (covbuf_size) {
-        uint32_t v = atoi(covbuf_size) * 1024;
-        SAY_INFO("covbuf_size = %d\n", v);
-        ins.set_covbuf_size(v);
+        covbuf_size_v = atoi(covbuf_size);
     }
-    uint32_t zero_corp_sample_size_val = 0;
+    SAY_INFO("covbuf_size = %d\n", covbuf_size_v);
+    ins.set_covbuf_size(covbuf_size_v);
+
+    uint32_t zero_corp_sample_size_val = 256;
     auto zero_corp_sample_size = GetOption("--zero_corp_sample_size", 
             argc, argv);
     if (zero_corp_sample_size) {
         zero_corp_sample_size_val = atoi(zero_corp_sample_size);
-        SAY_INFO("zero_corp_sample_size = %d\n", zero_corp_sample_size_val);
     }
+    SAY_INFO("zero_corp_sample_size = %d\n", zero_corp_sample_size_val);
+
+    uint32_t mutator_density_val = 256;
+    auto mutator_density = GetOption("--mutator_density", argc, argv);
+    if (mutator_density) {
+        mutator_density_val = atoi(mutator_density);
+    }
+    SAY_INFO("mutator_desity = %d\n", mutator_density_val);
 
     auto dll = GetOption("--dll", argc, argv);
     if (!dll) {
         dll = "HarnessWicLib.dll";
     }
-    if (!cov_mods.size()) {
-        SAY_INFO("Module to instrument: %s\n", dll);
-        cov_mods.push_back(dll);
-    }
+    SAY_INFO("Module to instrument: %s\n", dll);
 
     auto func = GetOption("--func", argc, argv);
     if (!func) {
         func = "fuzzIteration"; 
     }
+    SAY_INFO("func = %s\n", func);
 
     auto init_func = GetOption("--init_func", argc, argv);
-    //if (!init_func) {
-    //    init_func = "initRaw"; 
-    //}
+    SAY_INFO("init_func = %s\n", init_func);
 
     auto input_dir = GetOption("--in", argc, argv);
     if (!input_dir) {
-        input_dir = "initRaw"; 
+        input_dir = "in"; 
     }
     auto output_dir = GetOption("--out", argc, argv);
     if (!output_dir) {
@@ -642,7 +684,9 @@ int main(int argc, const char** argv)
         libs_resolved.push_back(lib);
         ins.explicit_instrument_module(lib, mod_name);
     }
-    //ins.set_strcmpcov();
+    if (is_strcmpcov) {
+        ins.set_strcmpcov();
+    }
 
     auto fuzz = in_process_fuzzer(&in_proc_harn, &ins);
     if (input_dir)
@@ -653,6 +697,12 @@ int main(int argc, const char** argv)
         fuzz.set_cmin_mode();
     if (zero_corp_sample_size_val)
         fuzz.set_zero_corp_sample_size(zero_corp_sample_size_val);
+    if (is_inccov)
+        fuzz.set_inccov();
+    if (is_bitcov)
+        fuzz.set_bitcov();
+    if (is_hashcov)
+        fuzz.set_hashcov();
     fuzz.run();
 
     ins.print_stats();
