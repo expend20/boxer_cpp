@@ -158,8 +158,8 @@ std::vector<uint8_t> readFile(const char *filePath)
 
     size_t fileSize = 0;
     auto data = readAllocFile(filePath, &fileSize);
-    ASSERT(fileSize);
-    ASSERT(data);
+    //ASSERT(fileSize);
+    //ASSERT(data);
 
     std::vector<uint8_t> res;
     res.resize(fileSize);
@@ -318,12 +318,25 @@ std::vector<std::vector<uint8_t>> files_to_vector(const char *path)
                 auto path2 = dirEntry.path().string();
                 // printf("Reading file %s\n", path2.c_str());
 
-                res.push_back(readFile(path2.c_str()));
+                auto cont = readFile(path2.c_str());
+                if (cont.size()) {
+                    res.push_back(std::move(cont));
+                }
+                else {
+                    SAY_WARN("File with zero size is skipped: %s\n", 
+                            path2.c_str());
+                }
             }
         }
         else {
             // Input is file
-            res.push_back(readFile(path));
+            auto cont = readFile(path);
+            if (cont.size()) {
+                res.push_back(std::move(cont));
+            }
+            else {
+                SAY_WARN("File with zero size is skipped: %s\n", path);
+            }
         }
     }
 

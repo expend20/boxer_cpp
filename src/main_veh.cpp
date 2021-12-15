@@ -73,6 +73,8 @@ class in_process_dll_harness {
 
 struct fuzzer_stats {
     ULONGLONG execs = 0;
+    ULONGLONG unique_crashes = 0;
+    ULONGLONG crashes = 0;
     ULONGLONG stable_cov = 0;
     ULONGLONG unstable_cov = 0;
     ULONGLONG cmpcov_bits = 0;
@@ -92,6 +94,7 @@ class in_process_fuzzer {
                 bool* is_unstable);
         void set_input(const char* path);
         void set_output(const char* path);
+        void set_crash_dir(const char* path);
         void set_cmin_mode(){ m_cmin_mode = true; };
         void set_zero_corp_sample_size(uint32_t v) {
             m_zero_corp_sample_size = v; 
@@ -99,14 +102,19 @@ class in_process_fuzzer {
         void set_inccov(){ m_is_inccov = true; };
         void set_hashcov(){ m_is_hashcov = true; };
         void set_bitcov(){ m_is_bitcov = true; };
+        void set_save_samples(){ m_is_save_samples = true; };
 
     private:
         void print_stats(bool force);
         void process_input_corpus();
         void process_output_corpus();
         void restart_if_should();
+
         std::vector<std::vector<uint8_t>>
             try_to_fix_strings(uint8_t* data, uint32_t sz);
+
+        void save_sample(const uint8_t* data, uint32_t size, 
+                crash_info* crash = 0);
 
     private:
         in_process_dll_harness* m_harness_inproc = 0;
@@ -122,12 +130,14 @@ class in_process_fuzzer {
 
         const char* m_input_corpus_path = 0;
         const char* m_output_corpus_path = 0;
+        const char* m_crash_dir = 0;
         uint32_t m_zero_corp_sample_size = 12 * 1024;
 
         bool m_cmin_mode = false;
         bool m_is_inccov = false;
         bool m_is_hashcov = false;
         bool m_is_bitcov = false;
+        bool m_is_save_samples = false;
 };
 
 void in_process_fuzzer::set_input(const char* path)
@@ -140,6 +150,12 @@ void in_process_fuzzer::set_output(const char* path)
 {
     ASSERT(path);
     m_output_corpus_path = path;
+}
+
+void in_process_fuzzer::set_crash_dir(const char* path)
+{
+    ASSERT(path);
+    m_crash_dir = path;
 }
 
 void in_process_fuzzer::process_input_corpus()
@@ -206,13 +222,13 @@ void in_process_fuzzer::print_stats(bool force)
         ULONGLONG newExecs = m_stats.execs - prevExecs;
         auto fcps = (double)newExecs / m_stats_sec_timeout;
         SAY_INFO("%8.2f fcps (%8.2f avg) %10d new bits %10d new inc\n"
-                "%10d total execs, %10d new execs\n"
+                "%10d (%d) crashes, %10d total execs, %10d new execs\n"
                 "%10d stable cov, %10d unstable cov, %10d cmpcov bits\n"
                 "%10d strcmp\n",
                 fcps,
                 (double)m_stats.execs / (printStatsCount * m_stats_sec_timeout),
                 m_stats.new_bits, m_stats.new_inc,
-                m_stats.execs, newExecs,
+                m_stats.crashes, m_stats.unique_crashes, m_stats.execs, newExecs,
                 m_stats.stable_cov, m_stats.unstable_cov, m_stats.cmpcov_bits,
                 m_stats.strcmp
                 );
@@ -294,6 +310,43 @@ bool in_process_fuzzer::cov_check_by_hash(const uint8_t* data, uint32_t size,
     return res;
 }
 
+void in_process_fuzzer::save_sample(const uint8_t* data, uint32_t size,
+        crash_info* crash) 
+{
+    if (!m_is_save_samples) return;
+
+    char buf[MAX_PATH];
+
+    auto hash = cov_tool::get_cov_hash(data, size);
+    auto hash_str = helper::hex_to_str((const char*)&hash, 
+            sizeof(hash));
+
+    if (!crash) {
+        static bool dir_checked = false;
+        if (!dir_checked) {
+            CreateDirectoryA(m_output_corpus_path, 0);
+            dir_checked = true;
+        }
+
+        snprintf(buf, sizeof(buf), "%s\\%s", m_output_corpus_path,
+                hash_str.c_str());
+    }
+    else {
+        static bool dir_checked = false;
+        if (!dir_checked) {
+            CreateDirectoryA(m_crash_dir, 0);
+            dir_checked = true;
+        }
+
+        snprintf(buf, sizeof(buf), "%s\\%s_%x_%x_%s.bin", m_crash_dir,
+                crash->mod_name.c_str(),
+                crash->code, crash->offset,
+                hash_str.c_str());
+    }
+
+    helper::writeFile(buf, (const char*)data, size, "wb");
+}
+
 void in_process_fuzzer::run_one_input(const uint8_t* data, uint32_t size,
         bool save_to_disk) 
 {
@@ -306,6 +359,23 @@ void in_process_fuzzer::run_one_input(const uint8_t* data, uint32_t size,
     bool should_save_to_disk = false;
     // stability is judged based on bits not inc
     auto new_hash_by_bits = cov_check_by_hash(data, size, &is_unstable);
+    if (m_inst->get_crash_info()->code) {
+        auto ci = m_inst->get_crash_info();
+        //SAY_INFO("Crashed: %x, sample size: %x, unstable: %d\n", 
+        //        ci->code, size, is_unstable);
+        { // judge uniqueness by the address of exception
+            static std::set<uint32_t> unique_offsets;
+            if (unique_offsets.find(ci->offset) == unique_offsets.end()) {
+                unique_offsets.insert(ci->offset);
+                m_stats.unique_crashes++;
+            }
+        }
+        m_stats.crashes++;
+
+        save_sample(data, size, ci);
+        m_inst->clear_crash_info();
+    }
+    
     if (is_unstable) return;
 
     if (new_hash_by_bits) {
@@ -355,13 +425,7 @@ void in_process_fuzzer::run_one_input(const uint8_t* data, uint32_t size,
 
     if (save_to_disk && should_save_to_disk) {
         // save to disk
-        auto hash = cov_tool::get_cov_hash(data, size);
-        auto hash_str = helper::hex_to_str((const char*)&hash, 
-                sizeof(hash));
-
-        std::string path = m_output_corpus_path;
-        path = path + "\\" + hash_str.c_str();
-        helper::writeFile(path.c_str(), (const char*)data, size, "wb");
+        save_sample(data, size);
     }
 
 }
@@ -669,8 +733,33 @@ int main(int argc, const char** argv)
         output_dir = out.c_str();
     }
     SAY_INFO("Output directory = %s\n", output_dir);
-    // ensure directory exists
-    CreateDirectoryA(output_dir, 0);
+
+    const char* crash_dir = 0;
+    { 
+        static std::string s = output_dir;
+        s += "_crash";
+        crash_dir = s.c_str();
+    }
+    SAY_INFO("Crash directory = %s\n", crash_dir);
+
+    if (!output_dir) {
+        static std::string out = "out_auto";
+        if (is_cmin) {
+            out += "_cmin";
+        }
+        if (init_func) {
+            out += "_"; 
+            out += init_func;
+        }
+        out += "_";
+        out += cov_mods[0];
+        output_dir = out.c_str();
+    }
+    SAY_INFO("Output directory = %s\n", output_dir);
+
+    auto is_save_samples = GetBinaryOption(
+            "--save_samples", argc, argv, true);
+    SAY_INFO("save_samples = %d\n", is_show_flow);
 
     auto vehi = veh_installer();
     vehi.register_handler(&ins);
@@ -693,6 +782,8 @@ int main(int argc, const char** argv)
         fuzz.set_input(input_dir);
     if (output_dir)
         fuzz.set_output(output_dir);
+    if (crash_dir)
+        fuzz.set_crash_dir(crash_dir);
     if (is_cmin)
         fuzz.set_cmin_mode();
     if (zero_corp_sample_size_val)
@@ -703,6 +794,9 @@ int main(int argc, const char** argv)
         fuzz.set_bitcov();
     if (is_hashcov)
         fuzz.set_hashcov();
+    if (is_save_samples) {
+        fuzz.set_save_samples();
+    }
     fuzz.run();
 
     ins.print_stats();

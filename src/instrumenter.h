@@ -50,6 +50,12 @@ struct instrumenter_options {
     size_t covbuf_size = 64 * 1024;
 };
 
+struct crash_info {
+    uint32_t code = 0;
+    size_t offset = 0;
+    std::string mod_name;
+};
+
 class instrumenter_module_data {
     public:
         std::string        module_name;
@@ -83,6 +89,8 @@ class instrumenter: public idebug_handler, public iveh_handler {
 
         void print_stats();
         instrumenter_stats* get_stats() { return &m_stats; };
+        crash_info* get_crash_info() { return &m_crash_info; };
+        void clear_crash_info() { m_crash_info = {0}; };
 
         // opts setters
         void set_int3_inst_blind() { m_opts.is_int3_inst_blind = true; };
@@ -110,10 +118,10 @@ class instrumenter: public idebug_handler, public iveh_handler {
         void clear_cmpcov();
         void clear_strcmpcov();
 
-
     private:
         //instrumenter(const instrumenter&) = delete;
 
+        void handle_crash(uint32_t code, size_t addr);
         DWORD handle_exception(EXCEPTION_DEBUG_INFO* dbg_info);
         bool should_instrument_module(const char* name);
         void instrument_module(size_t addr, const char* name);
@@ -123,6 +131,7 @@ class instrumenter: public idebug_handler, public iveh_handler {
         HANDLE get_target_process();
         void redirect_execution(size_t addr, size_t addr_inst);
         size_t find_inst_module(size_t addr);
+        size_t find_inst_module_by_inst_addr(size_t addr);
         void fix_two_bytes_bbs(translator* trans, 
                 std::map<size_t, instrumenter_bb_info>* bbs_info, 
                 std::vector<size_t>* two_bytes_bbs);
@@ -147,6 +156,7 @@ class instrumenter: public idebug_handler, public iveh_handler {
         CONTEXT* m_ctx = NULL;
         CONTEXT m_restore_ctx = {0};
         strcmpcov m_strcmpcov;
+        crash_info m_crash_info;
 };
 
 #endif // INSTRUMENTER_H

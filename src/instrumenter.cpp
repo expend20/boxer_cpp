@@ -11,6 +11,8 @@
 
 #include <string.h>
 
+#include <psapi.h>
+
 std::vector<strcmp_data>* instrumenter::get_strcmpcov()
 {
     if (m_inst_mods.size() != 1) {
@@ -111,6 +113,22 @@ HANDLE instrumenter::get_target_process()
         res = GetCurrentProcess();
     }
     return res;
+}
+
+size_t instrumenter::find_inst_module_by_inst_addr(size_t addr)
+{
+    for (auto &[mod_base, mod_data]: m_inst_mods) {
+
+        if (!mod_data.code_sect) continue;
+
+        auto start = mod_data.inst.addr_remote();
+        auto end = start + mod_data.inst.size();
+        if (addr >= start && addr < end) {
+            return mod_base;
+        }
+    }
+    return 0;
+
 }
 
 size_t instrumenter::find_inst_module(size_t addr)
@@ -334,7 +352,6 @@ void instrumenter::redirect_execution(size_t addr, size_t inst_addr)
     }
 
     if (m_debugger) {
-
         auto hThread = m_tid_to_handle[m_dbg_event->dwThreadId];
         if (!hThread) {
             hThread = OpenThread(THREAD_ALL_ACCESS, FALSE, 
@@ -381,6 +398,63 @@ void instrumenter::redirect_execution(size_t addr, size_t inst_addr)
         m_ctx->Eip = inst_addr;
 #endif
     }
+}
+
+void instrumenter::handle_crash(uint32_t code, size_t addr)
+{
+    auto mod_base = find_inst_module_by_inst_addr(addr);
+    if (mod_base) {
+        m_crash_info.mod_name = m_inst_mods[mod_base].module_name;
+        // TODO: fix to orig offset:
+        m_crash_info.offset = addr - m_inst_mods[mod_base].inst.addr_remote(); 
+    }
+    else {
+        // not instrumented module
+        HMODULE mods[1024];
+        DWORD cb;
+        uint32_t i;
+        char mod_name[MAX_PATH];
+
+        if (!EnumProcessModules(GetCurrentProcess(), mods, sizeof(mods), &cb)){
+            SAY_FATAL("Can't list modules on crash: %s\n", 
+                    helper::getLastErrorAsString().c_str());
+        }
+
+        for (i = 0; i < (cb / sizeof(HMODULE)); i++) {
+            MODULEINFO mi = {0};
+            auto r = GetModuleInformation(GetCurrentProcess(), mods[i],
+                    &mi, sizeof(mi));
+            if (!r) {
+                SAY_FATAL("Can't get module %p info: %s\n", mods[i],
+                        helper::getLastErrorAsString().c_str());
+            }
+
+            if (addr >= (size_t)mi.lpBaseOfDll && 
+                    addr <= (size_t)mi.lpBaseOfDll + mi.SizeOfImage) {
+                // we found the module
+            }
+            else {
+                continue;
+            }
+
+            r = GetModuleBaseName(GetCurrentProcess(), mods[i],
+                    mod_name, sizeof(mod_name));
+            if (!r) {
+                SAY_FATAL("Can't get module %p base name: %s\n", mods[i],
+                        helper::getLastErrorAsString().c_str());
+            }
+
+            m_crash_info.mod_name = mod_name;
+            m_crash_info.offset = addr - (size_t)mods[i];
+            SAY_INFO("%s %x %x\n", mod_name, m_crash_info.offset, code);
+            break;
+        }
+
+        if (i == cb / sizeof(HMODULE)) {
+            SAY_FATAL("Can't locate module %p\n", addr);
+        }
+    }
+    m_crash_info.code = code;
 }
 
 bool instrumenter::translate_or_redirect(size_t addr) 
@@ -493,6 +567,8 @@ void instrumenter::instrument_module(size_t addr, const char* name)
         SAY_FATAL("Attempt to double instrument module at %p, %s\n",
                 addr, name);
 
+    m_inst_mods[addr].module_name = name;
+    
     auto hproc = this->get_target_process();
     m_inst_mods[addr].pe = pehelper::pe(hproc, addr);
     auto pe = &m_inst_mods[addr].pe;
@@ -858,11 +934,34 @@ DWORD instrumenter::handle_veh(_EXCEPTION_POINTERS* ex_info) {
                 res = 1;
                 break;
             }
+            else { 
+                SAY_FATAL("C++ exception happened, but context was not "
+                        "stored\n");
+            }
         }
 
-        SAY_WARN("Unhandled exception: %x at %p\n",
-                ex_info->ExceptionRecord->ExceptionCode, 
-                ex_info->ExceptionRecord->ExceptionAddress);
+        // Last resort, probably crashed
+        switch (ex_code) {
+
+            case STATUS_ACCESS_VIOLATION:
+                handle_crash(ex_code, (size_t)ex_record->ExceptionAddress);
+                if (m_restore_ctx.Rip) {
+                    // restore previously saved context
+                    memcpy(m_ctx, &m_restore_ctx, sizeof(*m_ctx));
+                }
+                else { 
+                    SAY_FATAL("Crash happened, but context was not stored\n");
+                }
+                res = 1;
+                break;
+
+            default:
+                SAY_WARN("Unhandled exception: %x at %p\n",
+                        ex_info->ExceptionRecord->ExceptionCode, 
+                        ex_info->ExceptionRecord->ExceptionAddress);
+                break;
+        }
+
 
     } while(0);
 
