@@ -698,8 +698,7 @@ int main(int argc, const char** argv)
     }
     SAY_INFO("cmpcov = %d\n", is_cmpcov);
 
-    auto is_strcmpcov = GetBinaryOption(
-            "--strcmp", argc, argv, false);
+    auto is_strcmpcov = GetBinaryOption( "--strcmp", argc, argv, false);
     SAY_INFO("strcmpcov = %d\n", is_strcmpcov);
 
     auto is_inst_debug = GetBinaryOption("--inst_debug", argc, argv, false);
@@ -793,6 +792,7 @@ int main(int argc, const char** argv)
     if (!input_dir) {
         input_dir = "in"; 
     }
+
     auto output_dir = GetOption("--out", argc, argv);
     if (!output_dir) {
         static std::string out = "out_auto";
@@ -809,8 +809,8 @@ int main(int argc, const char** argv)
     }
     SAY_INFO("Output directory = %s\n", output_dir);
 
-    const char* crash_dir = 0;
-    { 
+    auto crash_dir = GetOption("--crash", argc, argv);
+    if (!crash_dir) {
         static std::string s = output_dir;
         s += "_crash";
         crash_dir = s.c_str();
