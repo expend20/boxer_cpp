@@ -112,6 +112,7 @@ class instrumenter: public idebug_handler, public iveh_handler {
 
         uint8_t* get_cov(uint32_t* size);
         uint8_t* get_cmpcov(uint32_t* size);
+        CONTEXT* get_restore_ctx() { return &m_restore_ctx; };
         std::vector<strcmp_data>* get_strcmpcov();
 
         void clear_cov();

@@ -6,8 +6,7 @@
 #include "tools.h"
 
 #define MAGIC_OFFSET_STORE 7
-#define MAGIC_OFFSET_RESTORE 0x2a
-#define MAGIC_OFFSET_CONTINUE 0x2e
+#define MAGIC_OFFSET_CONTINUE 4
 
 #include <string.h>
 
@@ -820,12 +819,8 @@ DWORD instrumenter::handle_exception(EXCEPTION_DEBUG_INFO* dbg_info)
 
             if (*(uint32_t*)((size_t)rec->ExceptionAddress + 
                         MAGIC_OFFSET_STORE) == MARKER_STORE_CONTEXT) {
-                ASSERT(*(uint32_t*)((size_t)rec->ExceptionAddress + 
-                            MAGIC_OFFSET_RESTORE) ==
-                            MARKER_RESTORE_CONTINUE);
-                auto tgt_rip = (size_t)rec->ExceptionAddress + 
-                    MAGIC_OFFSET_CONTINUE;
-                SAY_INFO("PC for continuation on exception %p\n", tgt_rip);
+                SAY_INFO("PC for continuation on exception %p\n", 
+                        rec->ExceptionAddress);
                 //memcpy(&m_restore_ctx, m_ctx, sizeof(m_restore_ctx));
                 __debugbreak();
             }
@@ -889,6 +884,7 @@ DWORD instrumenter::handle_veh(_EXCEPTION_POINTERS* ex_info) {
     auto ex_record = ex_info->ExceptionRecord;
     auto ex_code = ex_record->ExceptionCode;
     do { 
+        // check for instrumenations and breaks
         switch (ex_code) {
             case STATUS_ACCESS_VIOLATION:
                 if (ex_record->NumberParameters == 2 &&
@@ -901,9 +897,18 @@ DWORD instrumenter::handle_veh(_EXCEPTION_POINTERS* ex_info) {
 
                 if (*(uint32_t*)((size_t)pc + MAGIC_OFFSET_STORE) ==
                         MARKER_STORE_CONTEXT) {
-                    ASSERT(*(uint32_t*)(pc + MAGIC_OFFSET_RESTORE) ==
-                            MARKER_RESTORE_CONTINUE);
-                    size_t tgt_rip = pc + MAGIC_OFFSET_CONTINUE;
+                    // search for second magic
+                    size_t pc2 = 0;
+                    for (uint32_t i = 0; i < 100; i++) {
+                        if ( *(uint32_t*)(pc + i) == MARKER_RESTORE_CONTINUE) {
+                            pc2 = pc + i;
+                            break;
+                        }
+                    }
+                    if (!pc2) {
+                        SAY_FATAL("Can't find magic at %p + 100\n", pc);
+                    }
+                    size_t tgt_rip = pc2 + MAGIC_OFFSET_CONTINUE;
                     memcpy(&m_restore_ctx, m_ctx, sizeof(m_restore_ctx));
                     m_restore_ctx.Rip = tgt_rip;
                     SAY_INFO("PC for continuation on exception set %p\n", 
@@ -923,6 +928,7 @@ DWORD instrumenter::handle_veh(_EXCEPTION_POINTERS* ex_info) {
             break;
         }
 
+        // check for c++ exceptions
         if (ex_code == 0xe06d7363){
             m_stats.cpp_exceptions++;
             //SAY_WARN("C++ exception: .exr %p, at %p\n",
@@ -955,8 +961,12 @@ DWORD instrumenter::handle_veh(_EXCEPTION_POINTERS* ex_info) {
                 res = 1;
                 break;
 
+            // just skip these:
+            case DBG_PRINTEXCEPTION_C:
+                break;
+
             default:
-                SAY_WARN("Unhandled exception: %x at %p\n",
+                SAY_WARN("Intrumenter veh: Unhandled exception: %x at %p\n",
                         ex_info->ExceptionRecord->ExceptionCode, 
                         ex_info->ExceptionRecord->ExceptionAddress);
                 break;

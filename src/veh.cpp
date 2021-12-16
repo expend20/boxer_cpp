@@ -6,12 +6,16 @@ CRITICAL_SECTION veh_installer::m_crit_sect;
 
 LONG WINAPI veh_installer::static_handler(_EXCEPTION_POINTERS* ex_info) {
 
+    if (!m_inst) return EXCEPTION_CONTINUE_SEARCH;
+
     EnterCriticalSection(&m_crit_sect);
 
     LONG res = EXCEPTION_CONTINUE_SEARCH;
-    if (m_inst && m_inst->m_user_handler){
+    for (auto &user_handler: m_inst->m_user_handlers) {
+    //if (m_inst && m_inst->m_user_handler){
 
-        res = m_inst->m_user_handler->handle_veh(ex_info);
+        res = user_handler->handle_veh(ex_info);
+        if (res != EXCEPTION_CONTINUE_SEARCH) break;
 
     }
     LeaveCriticalSection(&m_crit_sect);

@@ -24,7 +24,6 @@ void respawn_process(int argc, const char** argv) {
      * Restart process to avoid memory leaks
      */
 
-
     auto new_opts = helper::skip_options(argc, argv, "--threads", true);
 
     auto cmd = ArgvToCmd(new_opts.size(), &new_opts[0]);
@@ -75,6 +74,7 @@ struct fuzzer_stats {
     ULONGLONG execs = 0;
     ULONGLONG unique_crashes = 0;
     ULONGLONG crashes = 0;
+    ULONGLONG timeouts = 0;
     ULONGLONG stable_cov = 0;
     ULONGLONG unstable_cov = 0;
     ULONGLONG cmpcov_bits = 0;
@@ -83,8 +83,9 @@ struct fuzzer_stats {
     ULONGLONG strcmp = 0;
 };
 
-class in_process_fuzzer {
+class in_process_fuzzer: public iveh_handler {
     public: 
+        DWORD handle_veh(_EXCEPTION_POINTERS* ex_info) override;
         in_process_fuzzer( in_process_dll_harness* harness, 
                 instrumenter* inst, uint32_t mutator_density = 0);
         void run();
@@ -103,6 +104,7 @@ class in_process_fuzzer {
         void set_hashcov(){ m_is_hashcov = true; };
         void set_bitcov(){ m_is_bitcov = true; };
         void set_save_samples(){ m_is_save_samples = true; };
+        void set_timeout(size_t v){ m_timeout = v; };
 
     private:
         void print_stats(bool force);
@@ -115,6 +117,8 @@ class in_process_fuzzer {
 
         void save_sample(const uint8_t* data, uint32_t size, 
                 crash_info* crash = 0);
+
+        static DWORD WINAPI _thread_ex_thrower(LPVOID p);
 
     private:
         in_process_dll_harness* m_harness_inproc = 0;
@@ -138,7 +142,54 @@ class in_process_fuzzer {
         bool m_is_hashcov = false;
         bool m_is_bitcov = false;
         bool m_is_save_samples = false;
+        bool m_is_timeouted = false;
+
+        uint32_t m_thread_id = 0;
+        HANDLE m_thread_ex_thrower = 0;
+        ULONGLONG m_start_ticks = 0;
+        ULONGLONG m_timeout = 0;
+
 };
+
+DWORD in_process_fuzzer::handle_veh(_EXCEPTION_POINTERS* ex_info) 
+{
+    auto ex_record = ex_info->ExceptionRecord;
+    auto ex_code = ex_record->ExceptionCode;
+
+    auto res = false;
+    // check for timeout on OutputDebugString messages
+    if (ex_code == DBG_PRINTEXCEPTION_C) {
+        if (m_start_ticks && 
+                GetTickCount64() - m_start_ticks > m_timeout) {
+            // timeout hit
+            m_stats.timeouts++;
+            m_is_timeouted = true;
+
+            auto thread = OpenThread(THREAD_ALL_ACCESS, FALSE, m_thread_id);
+            ASSERT(thread);
+
+            auto ctx = m_inst->get_restore_ctx();
+            //SAY_INFO("Redirecting on timeout %d %p\n", m_stats.timeouts, ctx);
+            ctx->ContextFlags = CONTEXT_ALL;
+            auto r = SetThreadContext(thread, ctx);
+            ASSERT(r);
+            CloseHandle(thread);
+        }
+    }
+
+    return res ? EXCEPTION_CONTINUE_SEARCH : EXCEPTION_CONTINUE_EXECUTION;
+}
+
+DWORD WINAPI in_process_fuzzer::_thread_ex_thrower(LPVOID p)
+{
+    // The purpose of this this thread is to generate exception every second
+    // so we have interruptions at least each second and check hanged samples
+    // in the exception handler
+    while(1) {
+        Sleep(50);
+        OutputDebugStringA("");
+    }
+}
 
 void in_process_fuzzer::set_input(const char* path)
 {
@@ -222,13 +273,15 @@ void in_process_fuzzer::print_stats(bool force)
         ULONGLONG newExecs = m_stats.execs - prevExecs;
         auto fcps = (double)newExecs / m_stats_sec_timeout;
         SAY_INFO("%8.2f fcps (%8.2f avg) %10d new bits %10d new inc\n"
-                "%10d (%d) crashes, %10d total execs, %10d new execs\n"
+                "%10d (%d) crashes, %10d timeouts, %10d total execs, "
+                " %10d new execs\n"
                 "%10d stable cov, %10d unstable cov, %10d cmpcov bits\n"
                 "%10d strcmp\n",
                 fcps,
                 (double)m_stats.execs / (printStatsCount * m_stats_sec_timeout),
                 m_stats.new_bits, m_stats.new_inc,
-                m_stats.crashes, m_stats.unique_crashes, m_stats.execs, newExecs,
+                m_stats.crashes, m_stats.unique_crashes, m_stats.timeouts, 
+                m_stats.execs, newExecs,
                 m_stats.stable_cov, m_stats.unstable_cov, m_stats.cmpcov_bits,
                 m_stats.strcmp
                 );
@@ -256,6 +309,8 @@ bool in_process_fuzzer::cov_check_by_hash(const uint8_t* data, uint32_t size,
         // clear coverage
         m_inst->clear_cov();
         // don't need to clear cmpcov because it's only increasing bits
+        
+        m_start_ticks = GetTickCount64();
 
         // WANRING: don't place any new code until restore mark, otherwise
         // adjust offsets in the handle.
@@ -269,6 +324,12 @@ bool in_process_fuzzer::cov_check_by_hash(const uint8_t* data, uint32_t size,
         // run the sample
         m_harness_inproc->call_fuzz_proc((const char*)data, size);
         continue_mark = MARKER_RESTORE_CONTINUE;
+
+        if (m_is_timeouted) {
+            // just skip these samples
+            m_is_timeouted = false;
+            break;
+        }
 
         uint32_t cov_sz = 0;
         auto cov = m_inst->get_cov(&cov_sz);
@@ -521,6 +582,13 @@ in_process_fuzzer::try_to_fix_strings(uint8_t* data, uint32_t sz)
 
 void in_process_fuzzer::run() 
 {
+    m_thread_ex_thrower = CreateThread(0, 0, _thread_ex_thrower, this, 0, 0);
+    if (!m_thread_ex_thrower) {
+        SAY_FATAL("Can't create thread, %s\n", 
+                helper::getLastErrorAsString().c_str());
+    }
+    m_thread_id = GetCurrentThreadId();
+
     process_output_corpus();
     process_input_corpus();
 
@@ -684,6 +752,13 @@ int main(int argc, const char** argv)
     SAY_INFO("covbuf_size = %d\n", covbuf_size_v);
     ins.set_covbuf_size(covbuf_size_v);
 
+    auto timeout = GetOption("--timeout", argc, argv);
+    uint32_t timeout_v = 10000;
+    if (timeout) {
+        timeout_v = atoi(timeout);
+    }
+    SAY_INFO("timeout_v = %d\n", timeout_v);
+
     uint32_t zero_corp_sample_size_val = 256;
     auto zero_corp_sample_size = GetOption("--zero_corp_sample_size", 
             argc, argv);
@@ -778,6 +853,7 @@ int main(int argc, const char** argv)
     }
 
     auto fuzz = in_process_fuzzer(&in_proc_harn, &ins);
+    vehi.register_handler(&fuzz);
     if (input_dir)
         fuzz.set_input(input_dir);
     if (output_dir)
@@ -796,6 +872,9 @@ int main(int argc, const char** argv)
         fuzz.set_hashcov();
     if (is_save_samples) {
         fuzz.set_save_samples();
+    }
+    if (timeout_v) {
+        fuzz.set_timeout(timeout_v);
     }
     fuzz.run();
 
