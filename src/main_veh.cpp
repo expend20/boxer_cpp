@@ -303,6 +303,10 @@ bool in_process_fuzzer::cov_check_by_hash(const uint8_t* data, uint32_t size,
     static size_t cached_ret = 0;
     static uint32_t store_mark = 0;
     static uint32_t continue_mark = 0;
+    static const uint8_t* sanity_data = 0;
+    static const uint32_t sanity_size = 0;
+    sanity_data = data;
+    sanity_size = size;
 
     uint32_t i = 0;
     for (; i < 3; i++) {
@@ -317,13 +321,20 @@ bool in_process_fuzzer::cov_check_by_hash(const uint8_t* data, uint32_t size,
         // We need to capture the current context if we need to force
         // continuation of the thread (e.g. timeout or exception)
         if (cached_ret != (size_t)_AddressOfReturnAddress()) {
+            // FIXME: how to save context without interruption on each 
+            // iteration?
             cached_ret = (size_t)_AddressOfReturnAddress();
             __debugbreak();
             store_mark = MARKER_STORE_CONTEXT;
         }
         // run the sample
-        m_harness_inproc->call_fuzz_proc((const char*)data, size);
+        m_harness_inproc->call_fuzz_proc((const char*)sanity_data, sanity_size);
         continue_mark = MARKER_RESTORE_CONTINUE;
+
+        //if (sanity_data != data) {
+        //    SAY_FATAL("Context restoration failed miserably %p != %p\n",
+        //            sanity_data, data);
+        //}
 
         if (m_is_timeouted) {
             // just skip these samples
@@ -606,7 +617,7 @@ void in_process_fuzzer::run()
     do { 
         if (m_stats.execs % 10 == 0) {
             print_stats(false);
-            restart_if_should();
+            //restart_if_should();
         }
 
         //
@@ -618,7 +629,6 @@ void in_process_fuzzer::run()
         //
         // run code
         //
-        //SAY_INFO("sample: %p %x\n", &new_sample[0], new_sample.size());
         run_one_input(&new_sample[0], new_sample.size());
 
         // attempt to find and patch strings 
@@ -816,21 +826,6 @@ int main(int argc, const char** argv)
         crash_dir = s.c_str();
     }
     SAY_INFO("Crash directory = %s\n", crash_dir);
-
-    if (!output_dir) {
-        static std::string out = "out_auto";
-        if (is_cmin) {
-            out += "_cmin";
-        }
-        if (init_func) {
-            out += "_"; 
-            out += init_func;
-        }
-        out += "_";
-        out += cov_mods[0];
-        output_dir = out.c_str();
-    }
-    SAY_INFO("Output directory = %s\n", output_dir);
 
     auto is_save_samples = GetBinaryOption(
             "--save_samples", argc, argv, true);

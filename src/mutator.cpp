@@ -135,7 +135,12 @@ std::vector<uint8_t> mutator::get_next_mutation()
 
     m_cachedIterations++;
 
-    auto res = m_corpus[m_cachedSampleIdx];
+    auto res_ptr = &m_corpus[m_cachedSampleIdx];
+    std::vector<uint8_t> res;
+    res.resize(res_ptr->size());
+    //SAY_INFO("cached sample idx %d(%d), %p %x\n", m_cachedSampleIdx,
+    //        m_corpus.size(), &((*res_ptr)[0]), res_ptr->size());
+    memcpy(&res[0], &((*res_ptr)[0]), res.size());
 
     auto strategy = rand() % 10;
 

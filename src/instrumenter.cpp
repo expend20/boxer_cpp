@@ -899,7 +899,7 @@ DWORD instrumenter::handle_veh(_EXCEPTION_POINTERS* ex_info) {
                         MARKER_STORE_CONTEXT) {
                     // search for second magic
                     size_t pc2 = 0;
-                    for (uint32_t i = 0; i < 100; i++) {
+                    for (uint32_t i = 0; i < 64; i++) {
                         if ( *(uint32_t*)(pc + i) == MARKER_RESTORE_CONTINUE) {
                             pc2 = pc + i;
                             break;
@@ -911,8 +911,8 @@ DWORD instrumenter::handle_veh(_EXCEPTION_POINTERS* ex_info) {
                     size_t tgt_rip = pc2 + MAGIC_OFFSET_CONTINUE;
                     memcpy(&m_restore_ctx, m_ctx, sizeof(m_restore_ctx));
                     m_restore_ctx.Rip = tgt_rip;
-                    SAY_INFO("PC for continuation on exception set %p\n", 
-                            tgt_rip);
+                    //SAY_INFO("PC for continuation on exception set %p\n", 
+                    //        tgt_rip);
                     m_ctx->Rip++;
                     res = 1;
                 }
@@ -950,6 +950,7 @@ DWORD instrumenter::handle_veh(_EXCEPTION_POINTERS* ex_info) {
         switch (ex_code) {
 
             case STATUS_ACCESS_VIOLATION:
+                __debugbreak();
                 handle_crash(ex_code, (size_t)ex_record->ExceptionAddress);
                 if (m_restore_ctx.Rip) {
                     // restore previously saved context
