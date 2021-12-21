@@ -6,6 +6,7 @@
 #include "pe.h"
 #include "translator.h"
 #include "strcov.h"
+#include "leaks.h"
 
 #include <map>
 #include <string>
@@ -108,7 +109,9 @@ class instrumenter: public idebug_handler, public iveh_handler {
         void set_skip_small_bb() { m_opts.skip_small_bb = true; };
         void set_stop_at(size_t v) { m_opts.stop_at = v; };
         void set_covbuf_size(size_t v) { m_opts.covbuf_size = v; };
-        void set_strcmpcov(); // install the hooks
+
+        void install_strcmpcov();
+        void install_leaks();
 
         uint8_t* get_cov(uint32_t* size);
         uint8_t* get_cmpcov(uint32_t* size);
@@ -118,6 +121,7 @@ class instrumenter: public idebug_handler, public iveh_handler {
         void clear_cov();
         void clear_cmpcov();
         void clear_strcmpcov();
+        void clear_leaks();
 
     private:
         //instrumenter(const instrumenter&) = delete;
@@ -157,6 +161,7 @@ class instrumenter: public idebug_handler, public iveh_handler {
         CONTEXT* m_ctx = NULL;
         CONTEXT m_restore_ctx = {0};
         strcmpcov m_strcmpcov;
+        leaks m_leaks;
         crash_info m_crash_info;
 };
 

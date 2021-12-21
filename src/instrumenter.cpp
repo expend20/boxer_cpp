@@ -12,6 +12,11 @@
 
 #include <psapi.h>
 
+void instrumenter::clear_leaks() 
+{
+    m_leaks.free_all();
+}
+
 std::vector<strcmp_data>* instrumenter::get_strcmpcov()
 {
     if (m_inst_mods.size() != 1) {
@@ -26,7 +31,7 @@ void instrumenter::clear_strcmpcov()
     m_strcmpcov.clear_data();
 }
 
-void instrumenter::set_strcmpcov() 
+void instrumenter::install_strcmpcov() 
 {
     if (m_inst_mods.size() != 1) {
         SAY_FATAL("Only one inst module is currently supported, got %d\n", 
@@ -37,6 +42,19 @@ void instrumenter::set_strcmpcov()
 
     auto imports = mod->pe.get_imports();
     m_strcmpcov.install(imports);
+}
+
+void instrumenter::install_leaks() 
+{
+    if (m_inst_mods.size() != 1) {
+        SAY_FATAL("Only one inst module is currently supported, got %d\n", 
+                m_inst_mods.size());
+    }
+    auto it = m_inst_mods.begin();
+    auto mod = &(it->second);
+
+    auto imports = mod->pe.get_imports();
+    m_leaks.install(imports);
 }
 
 void instrumenter::clear_cov()
@@ -929,7 +947,9 @@ DWORD instrumenter::handle_veh(_EXCEPTION_POINTERS* ex_info) {
         }
 
         // check for c++ exceptions
-        if (ex_code == 0xe06d7363){
+        if (ex_code == 0xe06d7363 ||
+                // windowscodecs.dll jpeg_error_mgr::error_exit:
+                ex_code == 0xc0000002){ 
             m_stats.cpp_exceptions++;
             //SAY_WARN("C++ exception: .exr %p, at %p\n",
             //        ex_info->ExceptionRecord, 
@@ -950,7 +970,6 @@ DWORD instrumenter::handle_veh(_EXCEPTION_POINTERS* ex_info) {
         switch (ex_code) {
 
             case STATUS_ACCESS_VIOLATION:
-                __debugbreak();
                 handle_crash(ex_code, (size_t)ex_record->ExceptionAddress);
                 if (m_restore_ctx.Rip) {
                     // restore previously saved context

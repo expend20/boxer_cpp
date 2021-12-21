@@ -304,7 +304,7 @@ bool in_process_fuzzer::cov_check_by_hash(const uint8_t* data, uint32_t size,
     static uint32_t store_mark = 0;
     static uint32_t continue_mark = 0;
     static const uint8_t* sanity_data = 0;
-    static const uint32_t sanity_size = 0;
+    static uint32_t sanity_size = 0;
     sanity_data = data;
     sanity_size = size;
 
@@ -331,6 +331,7 @@ bool in_process_fuzzer::cov_check_by_hash(const uint8_t* data, uint32_t size,
         m_harness_inproc->call_fuzz_proc((const char*)sanity_data, sanity_size);
         continue_mark = MARKER_RESTORE_CONTINUE;
 
+        m_inst->clear_leaks();
         //if (sanity_data != data) {
         //    SAY_FATAL("Context restoration failed miserably %p != %p\n",
         //            sanity_data, data);
@@ -458,7 +459,8 @@ void in_process_fuzzer::run_one_input(const uint8_t* data, uint32_t size,
             uint32_t cov_sz = 0;
             uint8_t* cov = 0;
             cov = m_inst->get_cov(&cov_sz);
-            if (m_is_bitcov && m_cov_tool_bits.is_new_cov_bits(cov, cov_sz)) {
+            if (m_is_bitcov && 
+                    m_cov_tool_bits.is_new_cov_bits(cov, cov_sz)) {
                 m_stats.new_bits++;
                 should_add_to_corpus = true;
                 should_save_to_disk = true;
@@ -467,6 +469,7 @@ void in_process_fuzzer::run_one_input(const uint8_t* data, uint32_t size,
                     m_cov_tool_inc.is_new_greater_byte(cov, cov_sz)) {
                 m_stats.new_inc++;
                 should_add_to_corpus = true;
+                should_save_to_disk = true;
             }
         }
     }
@@ -711,6 +714,9 @@ int main(int argc, const char** argv)
     auto is_strcmpcov = GetBinaryOption( "--strcmp", argc, argv, false);
     SAY_INFO("strcmpcov = %d\n", is_strcmpcov);
 
+    auto is_leaks = GetBinaryOption( "--leaks", argc, argv, true);
+    SAY_INFO("leaks = %d\n", is_strcmpcov);
+
     auto is_inst_debug = GetBinaryOption("--inst_debug", argc, argv, false);
     if (is_inst_debug) {
         ins.set_debug();
@@ -844,7 +850,10 @@ int main(int argc, const char** argv)
         ins.explicit_instrument_module(lib, mod_name);
     }
     if (is_strcmpcov) {
-        ins.set_strcmpcov();
+        ins.install_strcmpcov();
+    }
+    if (is_leaks) {
+        ins.install_leaks();
     }
 
     auto fuzz = in_process_fuzzer(&in_proc_harn, &ins);

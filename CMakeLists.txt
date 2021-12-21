@@ -25,6 +25,7 @@ add_library(boxer_lib
     src/mutator.cpp
     src/cov_tool.cpp
     src/strcov.cpp
+    src/leaks.cpp
     third_party/xxHash/xxhash.c
     )
 

@@ -14,7 +14,6 @@ strcmpcov::~strcmpcov()
     m_inst = 0;
 }
 
-
 void strcmpcov::install(std::vector<pehelper::import_module>* imports)
 {
     for (auto &import: *imports) {
@@ -78,9 +77,11 @@ void strcmpcov::uninstall()
 int strcmpcov::__strcmp(char* str1, char* str2) {
     //SAY_INFO("strcmp: %s %s\n", str1, str2);
     auto res = strcmp(str1, str2);
+    auto s1 = strlen(str1);
+    auto s2 = strlen(str2);
     if (res && !m_inst->m_stopped) {
         m_inst->add_to_processing((uint8_t*)str1, (uint8_t*)str2, 
-                strlen(str1), true);
+                s1 > s2 ? s2 : s1, true);
     }
     return res;
 }
@@ -88,9 +89,11 @@ int strcmpcov::__strcmp(char* str1, char* str2) {
 int strcmpcov::__stricmp(char* str1, char* str2) {
     //SAY_INFO("stricmp: %s %s\n", str1, str2);
     auto res = _stricmp(str1, str2);
+    auto s1 = strlen(str1);
+    auto s2 = strlen(str2);
     if (res && !m_inst->m_stopped) {
         m_inst->add_to_processing((uint8_t*)str1, (uint8_t*)str2, 
-                strlen(str1), true);
+               s1 > s2 ? s2 : s1, true);
     }
     return res;
 }
