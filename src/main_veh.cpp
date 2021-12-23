@@ -12,7 +12,7 @@
 #include "cov_tool.h"
 
 typedef void (*t_fuzz_proc)(const char* data, size_t len);
-typedef void (*t_init_func)();
+typedef void (*t_init_func)(int argc, const char** argv);
 
 const char** g_argv = 0;
 int g_argc = 0;
@@ -41,7 +41,9 @@ class in_process_dll_harness {
     public:
         in_process_dll_harness(const char* lib_path, 
                 const char* proc_name,
-                const char* init_name) {
+                const char* init_name,
+                int argc,
+                const char** argv) {
 
             lib = LoadLibrary(lib_path);
             if (!lib) 
@@ -54,8 +56,9 @@ class in_process_dll_harness {
             if (init_name) {
                 auto init = (t_init_func)GetProcAddress(lib, init_name);
                 if (!init) SAY_FATAL("Can't find init func: %s\n", init_name);
-                init();
+                init(argc, argv);
             }
+            Sleep(1*1000); // FIXME:
         }
 
         void call_fuzz_proc(const char* data, size_t len) {
@@ -293,6 +296,9 @@ void in_process_fuzzer::print_stats(bool force)
     }
 }
 
+const uint8_t* g_sanity_data = 0;
+uint32_t g_sanity_size = 0;
+
 bool in_process_fuzzer::cov_check_by_hash(const uint8_t* data, uint32_t size,
         bool* is_unstable) 
 {
@@ -303,10 +309,8 @@ bool in_process_fuzzer::cov_check_by_hash(const uint8_t* data, uint32_t size,
     static size_t cached_ret = 0;
     static uint32_t store_mark = 0;
     static uint32_t continue_mark = 0;
-    static const uint8_t* sanity_data = 0;
-    static uint32_t sanity_size = 0;
-    sanity_data = data;
-    sanity_size = size;
+    g_sanity_data = data;
+    g_sanity_size = size;
 
     uint32_t i = 0;
     for (; i < 3; i++) {
@@ -328,7 +332,7 @@ bool in_process_fuzzer::cov_check_by_hash(const uint8_t* data, uint32_t size,
             store_mark = MARKER_STORE_CONTEXT;
         }
         // run the sample
-        m_harness_inproc->call_fuzz_proc((const char*)sanity_data, sanity_size);
+        m_harness_inproc->call_fuzz_proc((const char*)g_sanity_data, g_sanity_size);
         continue_mark = MARKER_RESTORE_CONTINUE;
 
         m_inst->clear_leaks();
@@ -651,6 +655,7 @@ void in_process_fuzzer::run()
 
 int main(int argc, const char** argv)
 {
+    srand(__rdtsc());
     InitLogs(argc, argv);
     g_argv = argv;
     g_argc = argc;
@@ -715,7 +720,7 @@ int main(int argc, const char** argv)
     SAY_INFO("strcmpcov = %d\n", is_strcmpcov);
 
     auto is_leaks = GetBinaryOption( "--leaks", argc, argv, true);
-    SAY_INFO("leaks = %d\n", is_strcmpcov);
+    SAY_INFO("leaks = %d\n", is_leaks);
 
     auto is_inst_debug = GetBinaryOption("--inst_debug", argc, argv, false);
     if (is_inst_debug) {
@@ -840,7 +845,8 @@ int main(int argc, const char** argv)
     auto vehi = veh_installer();
     vehi.register_handler(&ins);
 
-    auto in_proc_harn = in_process_dll_harness(dll, func, init_func);
+    auto in_proc_harn = in_process_dll_harness(dll, func, init_func, argc, 
+            argv);
     std::vector<size_t> libs_resolved;
     for (auto &mod_name: cov_mods) {
         auto lib = (size_t)LoadLibrary(mod_name);

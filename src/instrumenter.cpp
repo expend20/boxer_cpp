@@ -970,7 +970,7 @@ DWORD instrumenter::handle_veh(_EXCEPTION_POINTERS* ex_info) {
         switch (ex_code) {
 
             case STATUS_ACCESS_VIOLATION:
-                handle_crash(ex_code, (size_t)ex_record->ExceptionAddress);
+                handle_crash(ex_code, pc);
                 if (m_restore_ctx.Rip) {
                     // restore previously saved context
                     memcpy(m_ctx, &m_restore_ctx, sizeof(*m_ctx));

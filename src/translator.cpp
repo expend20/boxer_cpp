@@ -42,13 +42,11 @@ uint32_t translator::make_op_2(xed_iclass_enum_t iclass, uint32_t bits,
     return sz;
 }
 
-bool translator::is_target_8bits(dasm::opcode* op) 
+bool translator::is_target_le_8bits(dasm::opcode* op) 
 {
     auto res = false;
 
-    if (op->imm_width && op->imm_width == 8 || 
-            op->mem_len0 && op->mem_len0 == 8 ||
-            op->op_width && op->op_width == 8) {
+    if (op->imm_width <= 8 && op->mem_len0 <= 8 && op->op_width <= 8) {
         res = true;
     }
     return res;
@@ -850,7 +848,7 @@ size_t translator::translate(size_t addr,
 
         orig_size += op->size_orig;
         if (m_opts.cmpcov && 
-                !is_target_8bits(op)) // skip single bytes comparisons
+                !is_target_le_8bits(op)) // skip single bytes comparisons
         {
             bool should_add_cmp_inst = false;
 
