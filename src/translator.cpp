@@ -73,7 +73,8 @@ void translator::add_cmpcov_inst(size_t addr, dasm::opcode* op)
     if (op->first_op_name == XED_OPERAND_REG0 &&
             op->second_op_name == XED_OPERAND_IMM0){
         // cmp edx, 0x31333337
-        uint32_t loop_len = op->imm_width / 8;
+        //uint32_t loop_len = op->imm_width / 8;
+        uint32_t loop_len = op->op_width / 8;
         //SAY_INFO("loop %d, largets %s, lowest %s\n", loop_len, 
         //        xed_reg_enum_t2str(op->reg0_largest),
         //        xed_reg_enum_t2str(op->reg0_smallest));
@@ -176,11 +177,11 @@ void translator::add_cmpcov_inst(size_t addr, dasm::opcode* op)
             op->second_op_name == XED_OPERAND_IMM0){
         // cmp dword ptr [rbx], 0x46464952
 
-        uint32_t loop_len = op->imm_width / 8;
+        uint32_t loop_len = op->op_width / 8;
 
         make_op_1(XED_ICLASS_PUSH, 64, xed_reg(XED_REG_RAX_EAX));
         auto prop_reg = dasm::opcode::get_reg_from_largest(
-                XED_REG_RAX_EAX, op->imm_width);
+                XED_REG_RAX_EAX, op->op_width);
 
         uint32_t mem_disp = op->mem_disp;
         uint32_t mem_disp_width = 32; // force disp width to ensure we'll fit
@@ -190,13 +191,13 @@ void translator::add_cmpcov_inst(size_t addr, dasm::opcode* op)
 
         // just get size in PC case
         auto inst_offset_bak = m_inst_offset;
-        auto mov_sz = make_op_2(XED_ICLASS_MOV, op->imm_width,
+        auto mov_sz = make_op_2(XED_ICLASS_MOV, op->op_width,
                 xed_reg(prop_reg), 
                 xed_mem_bisd(op->reg_base, 
                     op->reg_index, 
                     op->scale,
                     xed_disp(mem_disp, mem_disp_width),
-                    op->imm_width));
+                    op->op_width));
             
         // adjust disp & size in PC case
         if (op->reg_base == XED_REG_RIP ||
@@ -206,14 +207,14 @@ void translator::add_cmpcov_inst(size_t addr, dasm::opcode* op)
             size_t inst_end = (size_t)m_inst_code->addr_remote() +
                 m_inst_offset + mov_sz;
             mem_disp = tgt_addr - inst_end;
-            mov_sz = make_op_2(XED_ICLASS_MOV, op->imm_width,
+            mov_sz = make_op_2(XED_ICLASS_MOV, op->op_width,
                     xed_reg(prop_reg), 
                     xed_mem_bisd(op->reg_base, 
                         op->reg_index, 
                         op->scale,
                         xed_disp(mem_disp, 
                             op->mem_disp_width * 8), 
-                        op->imm_width));
+                        op->op_width));
         }
 
         for (uint32_t i = 0; i < loop_len; i++) {
@@ -262,7 +263,8 @@ void translator::add_cmpcov_inst(size_t addr, dasm::opcode* op)
         // cmp qword ptr [rbx], rdi
         ASSERT(op->mem_len0 == op->op_width);
 
-        uint32_t loop_len = op->mem_len0 / 8;
+        uint32_t loop_len = op->op_width / 8;
+        //uint32_t loop_len = op->mem_len0 / 8;
 
         auto prop_reg_largest = dasm::opcode::get_reg_except_this_list(
                 &op->reg0_largest, 1);
