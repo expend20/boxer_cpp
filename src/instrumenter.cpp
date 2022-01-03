@@ -949,7 +949,9 @@ DWORD instrumenter::handle_veh(_EXCEPTION_POINTERS* ex_info) {
         // check for c++ exceptions
         if (ex_code == 0xe06d7363 ||
                 // windowscodecs.dll jpeg_error_mgr::error_exit:
-                ex_code == 0xc0000002){ 
+                ex_code == 0xc0000002 ||
+                // msxml6!Exception::throwStored:
+                ex_code == 0xe0000001){ 
             m_stats.cpp_exceptions++;
             //SAY_WARN("C++ exception: .exr %p, at %p\n",
             //        ex_info->ExceptionRecord, 
@@ -970,6 +972,7 @@ DWORD instrumenter::handle_veh(_EXCEPTION_POINTERS* ex_info) {
         switch (ex_code) {
 
             case STATUS_ACCESS_VIOLATION:
+                SAY_INFO("av caught\n");
                 handle_crash(ex_code, pc);
                 if (m_restore_ctx.Rip) {
                     // restore previously saved context

@@ -17,6 +17,10 @@ typedef void (*t_init_func)(int argc, const char** argv);
 const char** g_argv = 0;
 int g_argc = 0;
 
+// We need access to that data during timeout and exception, so it should
+// hopefully be valid during the interruption
+const uint8_t* g_sanity_data = 0;
+uint32_t g_sanity_size = 0;
 
 void respawn_process(int argc, const char** argv) {
 
@@ -99,6 +103,7 @@ class in_process_fuzzer: public iveh_handler {
         void set_input(const char* path);
         void set_output(const char* path);
         void set_crash_dir(const char* path);
+        void set_timeout_dir(const char* path);
         void set_cmin_mode(){ m_cmin_mode = true; };
         void set_zero_corp_sample_size(uint32_t v) {
             m_zero_corp_sample_size = v; 
@@ -119,7 +124,7 @@ class in_process_fuzzer: public iveh_handler {
             try_to_fix_strings(uint8_t* data, uint32_t sz);
 
         void save_sample(const uint8_t* data, uint32_t size, 
-                crash_info* crash = 0);
+                crash_info* crash = 0, bool is_timeout = false);
 
         static DWORD WINAPI _thread_ex_thrower(LPVOID p);
 
@@ -138,6 +143,7 @@ class in_process_fuzzer: public iveh_handler {
         const char* m_input_corpus_path = 0;
         const char* m_output_corpus_path = 0;
         const char* m_crash_dir = 0;
+        const char* m_timeout_dir = 0;
         uint32_t m_zero_corp_sample_size = 12 * 1024;
 
         bool m_cmin_mode = false;
@@ -210,6 +216,12 @@ void in_process_fuzzer::set_crash_dir(const char* path)
 {
     ASSERT(path);
     m_crash_dir = path;
+}
+
+void in_process_fuzzer::set_timeout_dir(const char* path)
+{
+    ASSERT(path);
+    m_timeout_dir = path;
 }
 
 void in_process_fuzzer::process_input_corpus()
@@ -295,9 +307,6 @@ void in_process_fuzzer::print_stats(bool force)
         prevExecs = m_stats.execs;
     }
 }
-
-const uint8_t* g_sanity_data = 0;
-uint32_t g_sanity_size = 0;
 
 bool in_process_fuzzer::cov_check_by_hash(const uint8_t* data, uint32_t size,
         bool* is_unstable) 
@@ -388,7 +397,7 @@ bool in_process_fuzzer::cov_check_by_hash(const uint8_t* data, uint32_t size,
 }
 
 void in_process_fuzzer::save_sample(const uint8_t* data, uint32_t size,
-        crash_info* crash) 
+        crash_info* crash, bool is_timeout) 
 {
     if (!m_is_save_samples) return;
 
@@ -398,7 +407,16 @@ void in_process_fuzzer::save_sample(const uint8_t* data, uint32_t size,
     auto hash_str = helper::hex_to_str((const char*)&hash, 
             sizeof(hash));
 
-    if (!crash) {
+    if (is_timeout) {
+        static bool dir_checked = false;
+        if (!dir_checked) {
+            CreateDirectoryA(m_timeout_dir, 0);
+            dir_checked = true;
+        }
+        snprintf(buf, sizeof(buf), "%s\\%s", m_timeout_dir,
+                hash_str.c_str());
+    }
+    else if (!crash) {
         static bool dir_checked = false;
         if (!dir_checked) {
             CreateDirectoryA(m_output_corpus_path, 0);
@@ -453,6 +471,13 @@ void in_process_fuzzer::run_one_input(const uint8_t* data, uint32_t size,
         m_inst->clear_crash_info();
     }
     
+    if (m_is_timeouted) {
+        save_sample(data, size, 0, true);
+
+        m_is_timeouted = false;
+        return;
+    }
+
     if (is_unstable) return;
 
     if (new_hash_by_bits) {
@@ -482,21 +507,15 @@ void in_process_fuzzer::run_one_input(const uint8_t* data, uint32_t size,
     uint8_t* cmpcov = 0;
     cmpcov = m_inst->get_cmpcov(&cmpcov_sz);
 
-    // cmpcov is bits only, so we con't clear it, we only check for new ones;
+    // cmpcov is bits only, so we may not clear it, we only check for new ones;
     // thus we can use hash to speed up the process
     auto h = cov_tool::get_cov_hash(cmpcov, cmpcov_sz);
     if (m_cov_tool_cmp.is_new_cov_hash(h)) {
         m_stats.cmpcov_bits++;
         should_add_to_corpus = true;
         should_save_to_disk = true;
+        // TODO: clear passed cmp cases
     }
-    // we call this comparison in any case, because we want to have it updated
-    //bool is_cmpcov_bits = m_cov_tool_cmp.is_new_cov_bits(cmpcov, cmpcov_sz);
-    //if (is_cmpcov_bits) {
-    //    m_stats.cmpcov_bits++;
-    //    should_add_to_corpus = true;
-    //    should_save_to_disk = true;
-    //}
 
     if (should_add_to_corpus) {
         m_mutator.add_sample_to_corpus(data, size);
@@ -837,6 +856,14 @@ int main(int argc, const char** argv)
         crash_dir = s.c_str();
     }
     SAY_INFO("Crash directory = %s\n", crash_dir);
+
+    auto timeout_dir = GetOption("--timeout_dir", argc, argv);
+    if (!timeout_dir) {
+        static std::string s = output_dir;
+        s += "_timeout";
+        timeout_dir = s.c_str();
+    }
+    SAY_INFO("Timeout directory = %s\n", crash_dir);
 
     auto is_save_samples = GetBinaryOption(
             "--save_samples", argc, argv, true);
