@@ -27,6 +27,7 @@ struct instrumenter_stats {
     size_t exceptions = 0;
     size_t breakpoints = 0;
     size_t cpp_exceptions = 0;
+    size_t output_debug_str = 0;
     size_t avs = 0;
     size_t rip_redirections = 0;
     size_t bb_skipped_less_5 = 0;

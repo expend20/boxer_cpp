@@ -1,6 +1,7 @@
 #define _CRT_SECURE_NO_WARNINGS
 #include "common.h"
 #include "say.h"
+#include "args.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -296,6 +297,7 @@ void files2VectorDr(const char *path, std::vector<std::vector<uint8_t>> &res)
 std::vector<std::vector<uint8_t>> files_to_vector(const char *path)
 {
     std::vector<std::vector<uint8_t>> res;
+    if (!path) return res;
 
     struct stat b;
     if (!stat(path, &b)) {
@@ -469,5 +471,20 @@ std::string hex_to_str(const char* buf, size_t size) {
 
     return res;
 }
+
+void respawn_process(int argc, const char** argv) {
+
+    /*
+     * Restart process to avoid memory leaks
+     */
+
+    auto new_opts = helper::skip_options(argc, argv, "--threads", true);
+
+    auto cmd = ArgvToCmd(new_opts.size(), &new_opts[0]);
+    SAY_INFO("Respawning new process: %s", cmd);
+    auto newProc = helper::spawn(cmd, CREATE_NEW_CONSOLE);
+    exit(0);
+}
+
 
 }; // namespace helper

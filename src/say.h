@@ -19,7 +19,7 @@
 
 #endif // DR_BUILD
 
-void InitLogs(int argc, const char** argv);
+void init_logs(int argc, const char** argv);
 
 namespace say {
 
@@ -38,8 +38,8 @@ namespace say {
   };
 
   void say(SayLevel level, const char* fmt, ...);
-  void sayLevel(SayLevel l);
-  void sayType(SayType type);
+  void set_level(SayLevel l);
+  void say_type(SayType type);
 }
 
 #define STRINGIFY(x) #x

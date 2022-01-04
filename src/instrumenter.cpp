@@ -849,6 +849,10 @@ DWORD instrumenter::handle_exception(EXCEPTION_DEBUG_INFO* dbg_info)
                 SAY_DEBUG("Got STATUS_STACK_OVERFLOW, ignoring...\n");
             break;
         }
+        case DBG_PRINTEXCEPTION_C: {
+            m_stats.output_debug_str++;
+            break;
+        }
         default: {
             SAY_ERROR("Invalid exception code %x\n",
                     rec->ExceptionCode);
@@ -869,15 +873,18 @@ void instrumenter::print_stats()
     }
     SAY_INFO("Instrumenter stats: \n"
             "\t %d modules, callbacks [ %d dbg | %d veh ] "
-            "[ %d exceptions | %d avs | %d breakpoints | %d c++eh] \n"
+            "[ %d exceptions | %d avs | %d breakpoints | %d c++eh | %d dbgstr ]"
+            "\n"
             "\t %d pc redirections\n"
 
             "\t %d translated bb, skipped [ %d <5 | %d <2 ] \n"
             "\t %d cmpcov [ %d cmp | %d test | %d sub ]\n",
 
             m_inst_mods.size(), m_stats.dbg_callbacks, m_stats.veh_callbacks,
+
             m_stats.exceptions, m_stats.breakpoints, m_stats.avs,
-            m_stats.cpp_exceptions,
+            m_stats.cpp_exceptions, m_stats.output_debug_str,
+
             m_stats.rip_redirections,
 
             cs.translated_bbs,
@@ -891,6 +898,12 @@ DWORD instrumenter::handle_veh(_EXCEPTION_POINTERS* ex_info) {
     m_stats.veh_callbacks++;
     m_ctx = ex_info->ContextRecord;
     auto res = 0;
+
+    if (m_opts.debug) {
+        SAY_INFO("Instrumentor::handle_veh: %x / %x\n", 
+                ex_info->ExceptionRecord->ExceptionCode,
+                m_stats.veh_callbacks);
+    }
 
 #ifdef _WIN64
     size_t pc = m_ctx->Rip;
@@ -933,6 +946,7 @@ DWORD instrumenter::handle_veh(_EXCEPTION_POINTERS* ex_info) {
                     //        tgt_rip);
                     m_ctx->Rip++;
                     res = 1;
+                    SAY_INFO("Context set\n");
                 }
                 else {
                     should_translate_or_redirect = true;
@@ -972,7 +986,6 @@ DWORD instrumenter::handle_veh(_EXCEPTION_POINTERS* ex_info) {
         switch (ex_code) {
 
             case STATUS_ACCESS_VIOLATION:
-                SAY_INFO("av caught\n");
                 handle_crash(ex_code, pc);
                 if (m_restore_ctx.Rip) {
                     // restore previously saved context
@@ -984,14 +997,9 @@ DWORD instrumenter::handle_veh(_EXCEPTION_POINTERS* ex_info) {
                 res = 1;
                 break;
 
-            // just skip these:
-            case DBG_PRINTEXCEPTION_C:
-                break;
-
-            default:
-                SAY_WARN("Intrumenter veh: Unhandled exception: %x at %p\n",
-                        ex_info->ExceptionRecord->ExceptionCode, 
-                        ex_info->ExceptionRecord->ExceptionAddress);
+            case DBG_PRINTEXCEPTION_C || DBG_PRINTEXCEPTION_WIDE_C:
+                m_stats.output_debug_str++;
+                res = 1;
                 break;
         }
 

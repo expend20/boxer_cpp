@@ -53,7 +53,7 @@ void strcmpcov::install(std::vector<pehelper::import_module>* imports)
                 should_save = true;
             }
             else if (strstr(func.name.c_str(), "memcmp")) {
-                SAY_INFO("Patching strnicmp: %p -> %p\n", func.externAddr,
+                SAY_INFO("Patching memcmp: %p -> %p\n", func.externAddr,
                         __strnicmp);
                 *(size_t*)func.externAddr = (size_t)__memcmp;
                 should_save = true;

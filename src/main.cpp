@@ -11,7 +11,7 @@
 int main(int argc, const char** argv)
 {
     
-    InitLogs(argc, argv);
+    init_logs(argc, argv);
 
     if (argc == 1 || GetBinaryOption("-h", argc, argv, false) ||
             GetBinaryOption("--help", argc, argv, false)) {

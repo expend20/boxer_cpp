@@ -1,6 +1,6 @@
 #ifndef VEH_H
 
-#include <vector>
+#include <set>
 #include <windows.h>
 
 struct iveh_handler {
@@ -11,8 +11,18 @@ class veh_installer {
     public:
         veh_installer();
         void register_handler(iveh_handler* handler) { 
-            m_user_handlers.push_back(handler);
+            EnterCriticalSection(&m_crit_sect);
+            m_user_handlers.insert(handler);
+            LeaveCriticalSection(&m_crit_sect);
         };
+        void unregister_handler(iveh_handler* handler) { 
+            EnterCriticalSection(&m_crit_sect);
+            m_user_handlers.erase(handler);
+            LeaveCriticalSection(&m_crit_sect);
+        };
+        void unregister_all() {
+            m_user_handlers.clear();
+        }
 
     private:
         static veh_installer* m_inst;
@@ -20,7 +30,7 @@ class veh_installer {
         static LONG WINAPI static_handler( _EXCEPTION_POINTERS* ex_info);
 
         PVOID m_veh_handler = 0;
-        std::vector<iveh_handler*> m_user_handlers;
+        std::set<iveh_handler*> m_user_handlers;
 };
 
 #endif // VEH_H

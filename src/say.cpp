@@ -50,45 +50,45 @@ void say::say(SayLevel level, const char *fmt, ...)
     }
 }
 
-void say::sayLevel(SayLevel level)
+void say::set_level(SayLevel level)
 {
     remove("_log.txt");
     g_level = level;
 }
 
-void say::sayType(SayType type) { g_sayType = type; }
+void say::say_type(SayType type) { g_sayType = type; }
 
-void InitLogs(int argc, const char **argv)
+void init_logs(int argc, const char **argv)
 {
-    const char *logLevel = GetOption("--log_level", argc, argv);
-    if (logLevel) {
-        if (!strcmp(logLevel, "debug")) {
-            say::sayLevel(say::SayLevelDebug);
+    const char *log_level = GetOption("--log_level", argc, argv);
+    if (log_level) {
+        if (!strcmp(log_level, "debug")) {
+            say::set_level(say::SayLevelDebug);
         }
-        else if (!strcmp(logLevel, "info")) {
-            say::sayLevel(say::SayLevelInfo);
+        else if (!strcmp(log_level, "info")) {
+            say::set_level(say::SayLevelInfo);
         }
-        else if (!strcmp(logLevel, "error")) {
-            say::sayLevel(say::SayLevelError);
+        else if (!strcmp(log_level, "error")) {
+            say::set_level(say::SayLevelError);
         }
-        else if (!strcmp(logLevel, "warning")) {
-            say::sayLevel(say::SayLevelWarning);
+        else if (!strcmp(log_level, "warning")) {
+            say::set_level(say::SayLevelWarning);
         }
-        else if (!strcmp(logLevel, "silent")) {
-            say::sayLevel(say::SayLevelSilent);
+        else if (!strcmp(log_level, "silent")) {
+            say::set_level(say::SayLevelSilent);
         }
         else {
-            SAY_FATAL("Unknown log level: %s\n", logLevel);
+            SAY_FATAL("Unknown log level: %s\n", log_level);
         }
     }
     const char *logType = GetOption("--log_type", argc, argv);
 
     if (logType) {
         if (!strcmp(logType, "debug")) {
-            say::sayType(say::SayTypeDbg);
+            say::say_type(say::SayTypeDbg);
         }
         else if (!strcmp(logType, "console")) {
-            say::sayType(say::SayTypeConsole);
+            say::say_type(say::SayTypeConsole);
         }
         else {
             SAY_FATAL("Unknown log type: %s\n", logType);

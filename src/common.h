@@ -42,6 +42,8 @@ namespace helper {
 
     std::string hex_to_str(const char* buf, size_t size);
 
+    void respawn_process(int argc, const char** argv);
+
     template <class T> inline void SAFE_RELEASE(T *&pT)
     {
         if (pT != NULL) {

@@ -1,0 +1,155 @@
+#include "say.h"
+#include "common.h"
+#include "args.h"
+#include "inproc_fuzzer.h"
+
+enum AccTestCaseOption {
+    BitCov = 1 << 0,
+    IncCov = 1 << 1,
+    HashCov = 1 << 2,
+    StrcmpCov = 1 << 3,
+    CmpCov = 1 << 3,
+};
+
+enum AccTestCaseResult {
+    Timeout = 1 << 0,
+    Crash = 1 << 1,
+};
+
+typedef struct _AccTestCase {
+    const char* name;
+    size_t opts;
+    size_t result;
+} AccTestCase;
+
+AccTestCase AccTests[] = {
+    //{"FuzzMe1", BitCov, Crash},
+    //{"FuzzMeTimeout", BitCov, Timeout},
+    //{"FuzzMe2_inc", IncCov, Crash},
+    //{"FuzzMe3", IncCov | StrcmpCov, Crash},
+    //{"FuzzMe4", CmpCov, Crash},
+    //{"FuzzMe5", HashCov | CmpCov, Crash}, // FIXME: or, interesting
+    //{"FuzzMe6", CmpCov, Crash},
+    //{"FuzzMe7", CmpCov, Crash},
+    //{"FuzzMe8", CmpCov, Crash}, // FIXME: interesting too
+    //{"FuzzMeDWORD", CmpCov, Crash},
+    //{"FuzzMeStack", BitCov | CmpCov, Crash},
+    //{"FuzzMeStackOverflow", BitCov, Crash}, //FIXME
+    //{"FuzzMeOOBR", BitCov, Crash}, // works only with verifier
+    //{"FuzzMeStackChkstk", BitCov | CmpCov, Crash}, // FIXME: same stack overflow
+    //{"FuzzMeHeapCorruption", BitCov | CmpCov, Crash},
+    //{"FuzzMeMyMemcmp", IncCov | CmpCov, Crash},
+    //{"FuzzMePatternMatch_idx", IncCov | CmpCov, Crash},
+    //{"FuzzMeBigStr", IncCov, Crash}, // FIXME: growth
+    // FIXME: shrink
+    // Symbolic, avoid
+    
+    //{"FuzzMeSubRegImm", CmpCov, Crash},
+    //{"FuzzMeSubRegReg", CmpCov, Crash}, // FIXME
+    //{"FuzzMeSubMemReg", CmpCov, Crash}, // FIXME
+    //{"FuzzMeSubStkReg", CmpCov, Crash}, // FIXME
+    //{"FuzzMeSubRelReg", CmpCov, Crash}, // FIXME
+    
+    //{"FuzzMeCmpRegImm", CmpCov, Crash},
+    //{"FuzzMeCmpRegReg", CmpCov, Crash},
+    //{"FuzzMeCmpMemReg", CmpCov, Crash},
+    //{"FuzzMeCmpMemImm", CmpCov, Crash},
+    //{"FuzzMeCmpStkReg", CmpCov, Crash},
+    //{"FuzzMeCmpRelReg", CmpCov, Crash},
+    //{"FuzzMeCmpRegRel", CmpCov, Crash},
+    
+    //{"FuzzMeTestRegReg", CmpCov, Crash}, // FIXME
+    
+    //{"FuzzStr0", StrcmpCov, Crash},
+    //{"FuzzStr1", StrcmpCov, Crash},
+    //{"FuzzStr2", StrcmpCov, Crash},
+    //{"FuzzStr3", StrcmpCov, Crash},
+    //{"FuzzStr4", StrcmpCov, Crash}, // FIXME
+    //{"FuzzStr5", StrcmpCov, Crash}, // FIXME
+    //{"FuzzStr6", StrcmpCov, Crash}, // FIXME
+
+};
+
+int main(int argc, const char** argv)
+{
+    init_logs(argc, argv);
+    auto acctest_path = GetOption("--acctest", argc, argv);
+    if (!acctest_path) {
+        SAY_ERROR("Provide --acctest path\n");
+        return -1;
+    }
+
+    auto lib = LoadLibrary(acctest_path);
+    if (!lib) {
+        SAY_ERROR("Can't load library %s, %s\n", acctest_path,
+                helper::getLastErrorAsString().c_str());
+        return -1;
+    }
+    DisableThreadLibraryCalls(lib);
+
+    auto vehi = veh_installer();
+
+    for (auto &el: AccTests) {
+        SAY_INFO("=========================================================\n");
+        SAY_INFO("Running %s, opts %x, res %x\n", el.name, el.opts, el.result);
+        SAY_INFO("=========================================================\n");
+
+        auto ins = instrumenter();
+        vehi.register_handler(&ins);
+
+        ins.set_trans_disasm();
+        ins.set_covbuf_size(4 * 1024);
+        ins.set_fix_dd_refs();
+
+        if (el.opts & CmpCov) {
+            ins.set_trans_cmpcov();
+        }
+        ins.explicit_instrument_module((size_t)lib, "AccTest.dll");
+
+        auto inproc_harn = inprocess_dll_harness((size_t)lib, el.name, 0, 0, 0);
+        auto inproc_fuzz = inprocess_fuzzer(&inproc_harn, &ins);
+
+        vehi.register_handler(&inproc_fuzz);
+
+        inproc_fuzz.set_output("out_acctest_fuzzme1");
+        inproc_fuzz.set_zero_corp_sample_size(32);
+        inproc_fuzz.set_timeout(1000);
+        inproc_fuzz.set_stop_on_crash();
+        inproc_fuzz.set_stop_on_timeout();
+        inproc_fuzz.set_save_samples(false);
+
+        if (el.opts & BitCov) {
+            inproc_fuzz.set_bitcov();
+        }
+        if (el.opts & IncCov) {
+            inproc_fuzz.set_inccov();
+        }
+        if (el.opts & IncCov) {
+            inproc_fuzz.set_hashcov();
+        }
+        if (el.opts & StrcmpCov) {
+            ins.install_strcmpcov();
+        }
+
+        inproc_fuzz.run();
+
+        if (el.result & Crash) {
+            if (!inproc_fuzz.get_stats()->crashes) {
+                SAY_FATAL("Test case should crash, but it's not: %s\n", 
+                        el.name);
+            }
+        }
+        if (el.result & Timeout) {
+            if (!inproc_fuzz.get_stats()->timeouts) {
+                SAY_FATAL("Test case should timeout, but it's not: %s\n", 
+                        el.name);
+            }
+        }
+
+        ins.uninstrument_all();
+        vehi.unregister_handler(&inproc_fuzz);
+        vehi.unregister_handler(&ins);
+    }
+
+    FreeLibrary(lib);
+}
