@@ -24,6 +24,7 @@ DWORD inprocess_fuzzer::handle_veh(_EXCEPTION_POINTERS* ex_info)
     auto res = false;
     // check for imeout on OutputDebugString messages
     if (ex_code == TIMEOUT_CHECK) {
+
         if (m_start_ticks && 
                 GetTickCount64() - m_start_ticks > m_timeout) {
             // timeout hit
@@ -183,13 +184,12 @@ bool inprocess_fuzzer::cov_check_by_hash(const uint8_t* data, uint32_t size,
         // don't need to clear cmpcov because it's only increasing bits
         
         m_start_ticks = GetTickCount64();
-        SAY_INFO("call tgt ->\n");
 
         // WANRING: don't place any new code until restore mark, otherwise
         // adjust offsets in the handle.
         // We need to capture the current context if we need to force
         // continuation of the thread (e.g. timeout or exception)
-        if (cached_ret != (size_t)_AddressOfReturnAddress() || true) {
+        if (cached_ret != (size_t)_AddressOfReturnAddress()) {
             // FIXME: how to save context without interruption on each 
             // iteration?
             cached_ret = (size_t)_AddressOfReturnAddress();
@@ -201,8 +201,6 @@ bool inprocess_fuzzer::cov_check_by_hash(const uint8_t* data, uint32_t size,
                 g_sanity_size);
         continue_mark = MARKER_RESTORE_CONTINUE;
 
-        __debugbreak();
-        SAY_INFO("call tgt <-\n");
         m_inst->clear_leaks();
         //if (sanity_data != data) {
         //    SAY_FATAL("Context restoration failed miserably %p != %p\n",
@@ -521,8 +519,10 @@ void inprocess_fuzzer::run()
             }
         }
 
-        if (m_stop_on_crash && m_stats.crashes) {
-            SAY_INFO("Stopping on crash, last stats:\n");
+        if (m_stop_on_uniq_crash_count && 
+                m_stats.unique_crashes >= m_stop_on_uniq_crash_count) {
+            SAY_INFO("Stopping on crash (%d), last stats:\n",
+                    m_stats.unique_crashes);
             print_stats(true);
             break;
         }

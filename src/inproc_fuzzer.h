@@ -42,7 +42,9 @@ class inprocess_fuzzer: public iveh_handler {
         void set_timeout(size_t v){ m_timeout = v; };
         void set_argc_argv(int argc, const char** argv){ 
             m_argc = argc; m_argv = argv; };
-        void set_stop_on_crash() { m_stop_on_crash = true; };
+        void set_stop_on_unique_crash_count(uint32_t v) { 
+            m_stop_on_uniq_crash_count = v; 
+        };
         void set_stop_on_timeout() { m_stop_on_timeout = true; };
         fuzzer_stats* get_stats() { return &m_stats; };
 
@@ -96,7 +98,7 @@ class inprocess_fuzzer: public iveh_handler {
         int m_argc = 0;
         const char** m_argv = 0;
 
-        bool m_stop_on_crash = false;
+        uint32_t m_stop_on_uniq_crash_count = 0;
         bool m_stop_on_timeout = false;
 
         ULONGLONG m_prev_ticks = GetTickCount64();

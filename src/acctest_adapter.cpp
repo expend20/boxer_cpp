@@ -3,6 +3,8 @@
 #include "args.h"
 #include "inproc_fuzzer.h"
 
+#include <map>
+
 enum AccTestCaseOption {
     BitCov = 1 << 0,
     IncCov = 1 << 1,
@@ -20,7 +22,12 @@ typedef struct _AccTestCase {
     const char* name;
     size_t opts;
     size_t result;
+    size_t meta;
 } AccTestCase;
+
+std::map<std::string, uint32_t> g_crash_counts = {
+    {"FuzzMeAvoid", 2}
+};
 
 AccTestCase AccTests[] = {
     //{"FuzzMe1", BitCov, Crash},
@@ -31,25 +38,14 @@ AccTestCase AccTests[] = {
     //{"FuzzMe5", BitCov, Crash},
     //{"FuzzMe6", CmpCov, Crash},
     //{"FuzzMe7", CmpCov, Crash},
-    //{"FuzzMe8", HashCov, Crash}, // takes a while, hashcov only
+    //
     //{"FuzzMeDWORD", CmpCov, Crash},
     //{"FuzzMeStack", BitCov | CmpCov, Crash},
-    {"FuzzMeStackOverflow", BitCov, Crash}, // FIXME
     //{"FuzzMeOOBR", BitCov, Crash}, // works only with verifier
-    //{"FuzzMeStackChkstk", BitCov | CmpCov, Crash}, // FIXME: same stack overflow
     //{"FuzzMeHeapCorruption", BitCov | CmpCov, Crash},
     //{"FuzzMeMyMemcmp", IncCov | CmpCov, Crash},
     //{"FuzzMePatternMatch_idx", IncCov | CmpCov, Crash},
-    //{"FuzzMeBigStr", IncCov, Crash}, // FIXME: growth
-    // FIXME: shrink
-    // Symbolic, avoid
-    
-    //{"FuzzMeSubRegImm", CmpCov, Crash},
-    //{"FuzzMeSubRegReg", CmpCov, Crash}, // FIXME
-    //{"FuzzMeSubMemReg", CmpCov, Crash}, // FIXME
-    //{"FuzzMeSubStkReg", CmpCov, Crash}, // FIXME
-    //{"FuzzMeSubRelReg", CmpCov, Crash}, // FIXME
-    
+    //
     //{"FuzzMeCmpRegImm", CmpCov, Crash},
     //{"FuzzMeCmpRegReg", CmpCov, Crash},
     //{"FuzzMeCmpMemReg", CmpCov, Crash},
@@ -58,15 +54,28 @@ AccTestCase AccTests[] = {
     //{"FuzzMeCmpRelReg", CmpCov, Crash},
     //{"FuzzMeCmpRegRel", CmpCov, Crash},
     
-    //{"FuzzMeTestRegReg", CmpCov, Crash}, // FIXME
-    
     //{"FuzzStr0", StrcmpCov, Crash},
     //{"FuzzStr1", StrcmpCov, Crash},
     //{"FuzzStr2", StrcmpCov, Crash},
     //{"FuzzStr3", StrcmpCov, Crash},
+    //{"FuzzMeBigStr", IncCov, Crash}, // grow buf
+    //{"FuzzMeNotSoBigStr", IncCov, Crash}, // shrink buf
+    //{"FuzzMeWithoutSymbolic", IncCov, Crash}, // it's working but takes too much time
+    {"FuzzMeAvoid", CmpCov, Crash}, 
+    
+    //{"FuzzMeSubRegImm", CmpCov, Crash},
+    
+    //{"FuzzMe8", HashCov, Crash}, // takes a while, hashcov only
+    //{"FuzzMeStackOverflow", BitCov, Crash}, // TODO: process stop
+    //{"FuzzMeStackChkstk", BitCov | CmpCov, Crash}, // TODO: process stop
+    //{"FuzzMeSubRegReg", CmpCov, Crash}, // FIXME
+    //{"FuzzMeSubMemReg", CmpCov, Crash}, // FIXME
+    //{"FuzzMeSubStkReg", CmpCov, Crash}, // FIXME
+    //{"FuzzMeSubRelReg", CmpCov, Crash}, // FIXME
     //{"FuzzStr4", StrcmpCov, Crash}, // FIXME
     //{"FuzzStr5", StrcmpCov, Crash}, // FIXME
     //{"FuzzStr6", StrcmpCov, Crash}, // FIXME
+    
 
 };
 
@@ -102,13 +111,6 @@ int main(int argc, const char** argv)
         ins.set_covbuf_size(512);
         ins.set_fix_dd_refs();
 
-        // TEMP:
-        //ins.set_bbs_path("C:\\git\\boxer_cpp\\scripts\\AccTest.dll.bbs");
-        //ins.set_bbs_inst();
-        //ins.set_bbs_inst_all();
-        //ins.set_show_flow();
-        ins.set_debug();
-
         if (el.opts & CmpCov) {
             ins.set_trans_cmpcov();
         }
@@ -119,11 +121,20 @@ int main(int argc, const char** argv)
 
         vehi.register_handler(&inproc_fuzz);
 
-        inproc_fuzz.set_output("c:\\temp\\acctest");
         inproc_fuzz.set_zero_corp_sample_size(32);
         inproc_fuzz.set_timeout(1000);
-        inproc_fuzz.set_stop_on_crash();
+        if (g_crash_counts.find(el.name) != g_crash_counts.end()) {
+            SAY_INFO("custom crash count\n");
+            inproc_fuzz.set_stop_on_unique_crash_count(
+                    g_crash_counts[el.name]
+                    );
+        }
+        else {
+            inproc_fuzz.set_stop_on_unique_crash_count(1);
+        }
         inproc_fuzz.set_stop_on_timeout();
+        inproc_fuzz.set_output("out_acctest");
+        inproc_fuzz.set_crash_dir("out_acctest_crash");
         inproc_fuzz.set_save_samples(save_samples);
 
         if (el.opts & BitCov) {

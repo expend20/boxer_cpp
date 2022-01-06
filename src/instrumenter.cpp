@@ -1004,8 +1004,6 @@ DWORD instrumenter::handle_veh(_EXCEPTION_POINTERS* ex_info) {
                 handle_crash(ex_code, pc);
                 if (m_restore_ctx.Rip) {
                     // restore previously saved context
-                    SAY_INFO("rsp = %p -> %p\n", m_ctx->Rsp, 
-                            m_restore_ctx.Rsp);
                     memcpy(m_ctx, &m_restore_ctx, sizeof(*m_ctx));
                 }
                 else { 
