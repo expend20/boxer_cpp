@@ -25,8 +25,6 @@ class inprocess_fuzzer: public iveh_handler {
         inprocess_fuzzer(inprocess_dll_harness* harness, 
                 instrumenter* inst, uint32_t mutator_density = 0);
         void run();
-        void run_one_input(const uint8_t* data, uint32_t size, 
-                bool save_to_disk = true);
         bool cov_check_by_hash(const uint8_t* data, uint32_t size, 
                 bool* is_unstable);
         void set_input(const char* path);
@@ -49,6 +47,9 @@ class inprocess_fuzzer: public iveh_handler {
         fuzzer_stats* get_stats() { return &m_stats; };
 
     private:
+        void run_one_input(const uint8_t* data, uint32_t size, 
+                bool save_to_disk = true);
+
         void print_stats(bool force);
         void process_input_corpus();
         void process_output_corpus();
@@ -101,6 +102,8 @@ class inprocess_fuzzer: public iveh_handler {
         ULONGLONG m_prev_ticks = GetTickCount64();
         ULONGLONG m_print_stats_count = 1;
         ULONGLONG m_prev_execs = 1;
+
+        uint8_t m_stabilize_attempts = 5;
 };
 
 #endif // _INPROC_FUZZ_

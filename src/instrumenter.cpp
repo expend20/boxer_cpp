@@ -288,6 +288,7 @@ void instrumenter::translate_all_bbs()
         bbs_info[addr].orig_size = orig_size;
         ASSERT(inst_addr);
 
+        if (m_opts.show_flow) continue;
         //if (!m_opts.fix_dd_refs) continue; // don't fix jump in this mode
 
         if (orig_size >= 5) {
@@ -334,15 +335,16 @@ void instrumenter::translate_all_bbs()
                 }
             }
         }
-        //*(char*)addr = 0xcc; // FIXME:
     }
 
-    SAY_INFO("Fixing dd refs...\n");
-    if (m_opts.fix_dd_refs) 
-        trans->fix_dd_refs();
+    if (!m_opts.show_flow) {
+        SAY_INFO("Fixing dd refs...\n");
+        if (m_opts.fix_dd_refs) 
+            trans->fix_dd_refs();
 
-    SAY_INFO("Fixing two bytes bb...\n");
-    fix_two_bytes_bbs(trans, &bbs_info, &two_bytes_bbs);
+        SAY_INFO("Fixing two bytes bb...\n");
+        fix_two_bytes_bbs(trans, &bbs_info, &two_bytes_bbs);
+    }
 
     // Call commit on inst code
     code_sect->data.end();
@@ -576,9 +578,8 @@ void instrumenter::instrument_module(size_t addr, const char* name)
         inst_type = "int3";
     }
 
-    //if (m_opts.debug) {
-        SAY_INFO("Instrumenting %s %p %s...\n", inst_type, addr, name);
-    //}
+    SAY_INFO("Instrumenting %s %p %s...\n", inst_type, addr, name);
+    SAY_INFO("Covbuf size = %x\n", m_opts.covbuf_size);
 
     if (m_inst_mods[addr].code_sect) 
         SAY_FATAL("Attempt to double instrument module at %p, %s\n",
@@ -985,10 +986,26 @@ DWORD instrumenter::handle_veh(_EXCEPTION_POINTERS* ex_info) {
         // Last resort, probably crashed
         switch (ex_code) {
 
+            case STATUS_STACK_OVERFLOW:
+                SAY_WARN("Stack exhausted, exception %x\n", ex_code);
+                SAY_WARN("We can't really handle stack exhausting bugs without "
+                        "restarting of the process (which is slow), so just "
+                        "save the crashing sample and stop for now :(\n");
+                // The reason behind this is next. If stack is exhausted, the
+                // kernel allocates more stack (only once) and continues the
+                // execution with that exception. If it happens second time
+                // AV will be generated, and exception handling will become 
+                // impossible because there will be no more stack growth.
+                handle_crash(ex_code, pc);
+                ExitProcess(-1);
+                break;
             case STATUS_ACCESS_VIOLATION:
+
                 handle_crash(ex_code, pc);
                 if (m_restore_ctx.Rip) {
                     // restore previously saved context
+                    SAY_INFO("rsp = %p -> %p\n", m_ctx->Rsp, 
+                            m_restore_ctx.Rsp);
                     memcpy(m_ctx, &m_restore_ctx, sizeof(*m_ctx));
                 }
                 else { 
@@ -1007,6 +1024,8 @@ DWORD instrumenter::handle_veh(_EXCEPTION_POINTERS* ex_info) {
     } while(0);
 
     m_ctx = 0;
+    if (ex_code == STATUS_STACK_OVERFLOW)
+        printf("stack overflow ret\n");
     return res == 0 ? EXCEPTION_CONTINUE_SEARCH : EXCEPTION_CONTINUE_EXECUTION;
 }
 

@@ -28,13 +28,13 @@ AccTestCase AccTests[] = {
     //{"FuzzMe2_inc", IncCov, Crash},
     //{"FuzzMe3", IncCov | StrcmpCov, Crash},
     //{"FuzzMe4", CmpCov, Crash},
-    //{"FuzzMe5", HashCov | CmpCov, Crash}, // FIXME: or, interesting
+    //{"FuzzMe5", BitCov, Crash},
     //{"FuzzMe6", CmpCov, Crash},
     //{"FuzzMe7", CmpCov, Crash},
-    //{"FuzzMe8", CmpCov, Crash}, // FIXME: interesting too
+    //{"FuzzMe8", HashCov, Crash}, // takes a while, hashcov only
     //{"FuzzMeDWORD", CmpCov, Crash},
     //{"FuzzMeStack", BitCov | CmpCov, Crash},
-    //{"FuzzMeStackOverflow", BitCov, Crash}, //FIXME
+    {"FuzzMeStackOverflow", BitCov, Crash}, // FIXME
     //{"FuzzMeOOBR", BitCov, Crash}, // works only with verifier
     //{"FuzzMeStackChkstk", BitCov | CmpCov, Crash}, // FIXME: same stack overflow
     //{"FuzzMeHeapCorruption", BitCov | CmpCov, Crash},
@@ -78,6 +78,7 @@ int main(int argc, const char** argv)
         SAY_ERROR("Provide --acctest path\n");
         return -1;
     }
+    auto save_samples = GetBinaryOption("--samples", argc, argv, false);
 
     auto lib = LoadLibrary(acctest_path);
     if (!lib) {
@@ -98,8 +99,15 @@ int main(int argc, const char** argv)
         vehi.register_handler(&ins);
 
         ins.set_trans_disasm();
-        ins.set_covbuf_size(4 * 1024);
+        ins.set_covbuf_size(512);
         ins.set_fix_dd_refs();
+
+        // TEMP:
+        //ins.set_bbs_path("C:\\git\\boxer_cpp\\scripts\\AccTest.dll.bbs");
+        //ins.set_bbs_inst();
+        //ins.set_bbs_inst_all();
+        //ins.set_show_flow();
+        ins.set_debug();
 
         if (el.opts & CmpCov) {
             ins.set_trans_cmpcov();
@@ -111,12 +119,12 @@ int main(int argc, const char** argv)
 
         vehi.register_handler(&inproc_fuzz);
 
-        inproc_fuzz.set_output("out_acctest_fuzzme1");
+        inproc_fuzz.set_output("c:\\temp\\acctest");
         inproc_fuzz.set_zero_corp_sample_size(32);
         inproc_fuzz.set_timeout(1000);
         inproc_fuzz.set_stop_on_crash();
         inproc_fuzz.set_stop_on_timeout();
-        inproc_fuzz.set_save_samples(false);
+        inproc_fuzz.set_save_samples(save_samples);
 
         if (el.opts & BitCov) {
             inproc_fuzz.set_bitcov();
@@ -124,7 +132,7 @@ int main(int argc, const char** argv)
         if (el.opts & IncCov) {
             inproc_fuzz.set_inccov();
         }
-        if (el.opts & IncCov) {
+        if (el.opts & HashCov) {
             inproc_fuzz.set_hashcov();
         }
         if (el.opts & StrcmpCov) {

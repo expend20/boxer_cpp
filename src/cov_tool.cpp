@@ -61,7 +61,6 @@ bool cov_tool::is_new_cov_bits(const uint8_t* cov, uint32_t sz)
 
 XXH128_hash_t cov_tool::get_cov_hash(const uint8_t* cov, uint32_t sz)
 {
-
     XXH3_state_s *const state = XXH3_createState();
 
     XXH3_128bits_reset(state);
@@ -78,15 +77,20 @@ XXH128_hash_t cov_tool::get_cov_hash(const uint8_t* cov, uint32_t sz)
     return res;
 }
 
-
 bool cov_tool::is_new_cov_hash(XXH128_hash_t h, bool modify_state)
 {
     if (m_cov_bits_hashes.find(h) == m_cov_bits_hashes.end()) {
-        if (modify_state)
+        if (modify_state) {
             m_cov_bits_hashes.insert(h);
+        }
         return true;
     }
     else {
         return false;
     }
+}
+
+void cov_tool::add_hash(XXH128_hash_t h)
+{
+    m_cov_bits_hashes.insert(h);
 }

@@ -177,18 +177,19 @@ bool inprocess_fuzzer::cov_check_by_hash(const uint8_t* data, uint32_t size,
     g_sanity_size = size;
 
     uint32_t i = 0;
-    for (; i < 5; i++) {
+    for (; i < m_stabilize_attempts; i++) {
         // clear coverage
         m_inst->clear_cov();
         // don't need to clear cmpcov because it's only increasing bits
         
         m_start_ticks = GetTickCount64();
+        SAY_INFO("call tgt ->\n");
 
         // WANRING: don't place any new code until restore mark, otherwise
         // adjust offsets in the handle.
         // We need to capture the current context if we need to force
         // continuation of the thread (e.g. timeout or exception)
-        if (cached_ret != (size_t)_AddressOfReturnAddress()) {
+        if (cached_ret != (size_t)_AddressOfReturnAddress() || true) {
             // FIXME: how to save context without interruption on each 
             // iteration?
             cached_ret = (size_t)_AddressOfReturnAddress();
@@ -196,9 +197,12 @@ bool inprocess_fuzzer::cov_check_by_hash(const uint8_t* data, uint32_t size,
             store_mark = MARKER_STORE_CONTEXT;
         }
         // run the sample
-        m_harness_inproc->call_fuzz_proc((const char*)g_sanity_data, g_sanity_size);
+        m_harness_inproc->call_fuzz_proc((const char*)g_sanity_data, 
+                g_sanity_size);
         continue_mark = MARKER_RESTORE_CONTINUE;
 
+        __debugbreak();
+        SAY_INFO("call tgt <-\n");
         m_inst->clear_leaks();
         //if (sanity_data != data) {
         //    SAY_FATAL("Context restoration failed miserably %p != %p\n",
@@ -217,35 +221,23 @@ bool inprocess_fuzzer::cov_check_by_hash(const uint8_t* data, uint32_t size,
 
         auto h = cov_tool::get_cov_hash(cov, cov_sz);
         if (!hashes.size() && !m_cov_tool_bits.is_new_cov_hash(h, false)) {
-            // first iteration without new cov
+            // first iteration, no new cov
             break;
         }
 
         if (hashes.size() && hashes.find(h) != hashes.end()) {
-            // we found one stable coverage, check it again, with state
-            // modification
-            if (!m_cov_tool_bits.is_new_cov_hash(h)) {
-                // oops, stable cov hash is already processed
-                break;
-            }
             // we've got new stable hash
-            //m_cov_tool_bits.is_new_cov_hash(h);
+            m_stats.stable_cov++;
+            m_cov_tool_bits.add_hash(h);
             res = true;
             break;
         }
         hashes.insert(h);
     }
-    if (res) {
-        m_stats.stable_cov++;
-    } else {
-        if (i == 3) {
-            m_stats.unstable_cov++;
-            // add all unstable hashes to the cov_tool's internal state
-            for (auto &h : hashes) {
-                m_cov_tool_bits.is_new_cov_hash(h);
-            }
-            if (is_unstable) *is_unstable = true;
-        }
+    if (i == m_stabilize_attempts) {
+        m_stats.unstable_cov++;
+
+        if (is_unstable) *is_unstable = true;
     }
 
     return res;
@@ -366,12 +358,14 @@ void inprocess_fuzzer::run_one_input(const uint8_t* data, uint32_t size,
 
     // cmpcov is bits only, so we may not clear it, we only check for new ones;
     // thus we can use hash to speed up the process
-    auto h = cov_tool::get_cov_hash(cmpcov, cmpcov_sz);
-    if (m_cov_tool_cmp.is_new_cov_hash(h)) {
-        m_stats.cmpcov_bits++;
-        should_add_to_corpus = true;
-        should_save_to_disk = true;
-        // TODO: clear passed cmp cases
+    if (cmpcov_sz) {
+        auto h = cov_tool::get_cov_hash(cmpcov, cmpcov_sz);
+        if (m_cov_tool_cmp.is_new_cov_hash(h)) {
+            m_stats.cmpcov_bits++;
+            should_add_to_corpus = true;
+            should_save_to_disk = true;
+            // TODO: clear passed cmp cases
+        }
     }
 
     if (should_add_to_corpus) {
@@ -510,20 +504,14 @@ void inprocess_fuzzer::run()
             //restart_if_should();
         }
 
-        //
         // get mutation
-        //
         auto new_sample = m_mutator.get_next_mutation();
 
         m_inst->clear_strcmpcov();
-        //
         // run code
-        //
         run_one_input(&new_sample[0], new_sample.size());
 
         // attempt to find and patch strings 
-
-
         if (m_stats.execs % 1000 == 0) {
             auto str_samples = try_to_fix_strings(
                     &new_sample[0], new_sample.size());
