@@ -11,20 +11,13 @@ LONG WINAPI veh_installer::static_handler(_EXCEPTION_POINTERS* ex_info) {
     EnterCriticalSection(&m_crit_sect);
 
     LONG res = EXCEPTION_CONTINUE_SEARCH;
-    bool handled = false;
     for (auto &user_handler: m_inst->m_user_handlers) {
     //if (m_inst && m_inst->m_user_handler){
 
         res = user_handler->handle_veh(ex_info);
         if (res != EXCEPTION_CONTINUE_SEARCH) {
-            handled = true;
             break;
         }
-    }
-    if (!handled)  {
-        SAY_WARN("Intrumenter veh: Unhandled exception: %x at %p\n",
-                ex_info->ExceptionRecord->ExceptionCode, 
-                ex_info->ExceptionRecord->ExceptionAddress);
     }
 
     LeaveCriticalSection(&m_crit_sect);

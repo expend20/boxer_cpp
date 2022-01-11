@@ -30,57 +30,62 @@ std::map<std::string, uint32_t> g_crash_counts = {
 };
 
 AccTestCase AccTests[] = {
-    //{"FuzzMe1", BitCov, Crash},
-    //{"FuzzMeTimeout", BitCov, Timeout},
-    //{"FuzzMe2_inc", IncCov, Crash},
-    //{"FuzzMe3", IncCov | StrcmpCov, Crash},
-    //{"FuzzMe4", CmpCov, Crash},
-    //{"FuzzMe5", BitCov, Crash},
-    //{"FuzzMe6", CmpCov, Crash},
-    //{"FuzzMe7", CmpCov, Crash},
-    //
-    //{"FuzzMeDWORD", CmpCov, Crash},
-    //{"FuzzMeStack", BitCov | CmpCov, Crash},
-    //{"FuzzMeOOBR", BitCov, Crash}, // works only with verifier
-    //{"FuzzMeHeapCorruption", BitCov | CmpCov, Crash},
-    //{"FuzzMeMyMemcmp", IncCov | CmpCov, Crash},
-    //{"FuzzMePatternMatch_idx", IncCov | CmpCov, Crash},
-    //
-    //{"FuzzMeCmpRegImm", CmpCov, Crash},
-    //{"FuzzMeCmpRegReg", CmpCov, Crash},
-    //{"FuzzMeCmpMemReg", CmpCov, Crash},
-    //{"FuzzMeCmpMemImm", CmpCov, Crash},
-    //{"FuzzMeCmpStkReg", CmpCov, Crash},
-    //{"FuzzMeCmpRelReg", CmpCov, Crash},
-    //{"FuzzMeCmpRegRel", CmpCov, Crash},
+    {"FuzzMe1", BitCov, Crash},
+    {"FuzzMeTimeout", BitCov, Timeout},
+    {"FuzzMe2_inc", IncCov, Crash},
+    {"FuzzMe3", IncCov | StrcmpCov, Crash},
+    {"FuzzMe4", CmpCov, Crash},
+    {"FuzzMe5", BitCov, Crash},
+    {"FuzzMe6", CmpCov, Crash},
+    {"FuzzMe7", CmpCov, Crash},
     
-    //{"FuzzStr0", StrcmpCov, Crash},
-    //{"FuzzStr1", StrcmpCov, Crash},
-    //{"FuzzStr2", StrcmpCov, Crash},
-    //{"FuzzStr3", StrcmpCov, Crash},
-    //{"FuzzMeBigStr", IncCov, Crash}, // grow buf
-    //{"FuzzMeNotSoBigStr", IncCov, Crash}, // shrink buf
+    {"FuzzMeDWORD", CmpCov, Crash},
+    {"FuzzMeStack", BitCov | CmpCov, Crash},
+    //{"FuzzMeOOBR", BitCov, Crash}, // works only with verifier
+    //{"FuzzMeHeapCorruption", BitCov | CmpCov, Crash}, // how can we restore after this?
+    {"FuzzMeMyMemcmp", IncCov | CmpCov, Crash},
+    {"FuzzMePatternMatch_idx", IncCov | CmpCov, Crash},
+    
+    {"FuzzMeCmpRegImm", CmpCov, Crash},
+    {"FuzzMeCmpRegReg", CmpCov, Crash},
+    {"FuzzMeCmpMemReg", CmpCov, Crash},
+    {"FuzzMeCmpMemImm", CmpCov, Crash},
+    {"FuzzMeCmpStkReg", CmpCov, Crash},
+    {"FuzzMeCmpRelReg", CmpCov, Crash},
+    {"FuzzMeCmpRegRel", CmpCov, Crash},
+    {"FuzzMeTestRegReg", CmpCov, Crash},
+    
+    {"FuzzStr0", StrcmpCov, Crash},
+    {"FuzzStr1", StrcmpCov, Crash},
+    {"FuzzStr2", StrcmpCov, Crash},
+    {"FuzzStr3", StrcmpCov, Crash},
+    {"FuzzMeBigStr", IncCov, Crash}, // grow buf
+    {"FuzzMeNotSoBigStr", IncCov, Crash}, // shrink buf
     //{"FuzzMeWithoutSymbolic", IncCov, Crash}, // it's working but takes too much time
     {"FuzzMeAvoid", CmpCov, Crash}, 
     
-    //{"FuzzMeSubRegImm", CmpCov, Crash},
+    {"FuzzMeSubRegImm", CmpCov, Crash},
+
+    {"FuzzStr4", StrcmpCov, Crash},
+    {"FuzzStr5", StrcmpCov, Crash},
+    {"FuzzStr6", StrcmpCov, Crash},
+    {"FuzzStr7", StrcmpCov, Crash},
     
     //{"FuzzMe8", HashCov, Crash}, // takes a while, hashcov only
     //{"FuzzMeStackOverflow", BitCov, Crash}, // TODO: process stop
     //{"FuzzMeStackChkstk", BitCov | CmpCov, Crash}, // TODO: process stop
-    //{"FuzzMeSubRegReg", CmpCov, Crash}, // FIXME
-    //{"FuzzMeSubMemReg", CmpCov, Crash}, // FIXME
-    //{"FuzzMeSubStkReg", CmpCov, Crash}, // FIXME
-    //{"FuzzMeSubRelReg", CmpCov, Crash}, // FIXME
-    //{"FuzzStr4", StrcmpCov, Crash}, // FIXME
-    //{"FuzzStr5", StrcmpCov, Crash}, // FIXME
-    //{"FuzzStr6", StrcmpCov, Crash}, // FIXME
+    //
+    //{"FuzzMeSubRegReg", CmpCov, Crash}, // TODO: implement in acctest
+    //{"FuzzMeSubMemReg", CmpCov, Crash}, // TODO: implement in acctest 
+    //{"FuzzMeSubStkReg", CmpCov, Crash}, // TODO: implement in acctest
+    //{"FuzzMeSubRelReg", CmpCov, Crash}, // TODO: implement in acctest
     
 
 };
 
 int main(int argc, const char** argv)
 {
+    __debugbreak();
     init_logs(argc, argv);
     auto acctest_path = GetOption("--acctest", argc, argv);
     if (!acctest_path) {
@@ -88,6 +93,9 @@ int main(int argc, const char** argv)
         return -1;
     }
     auto save_samples = GetBinaryOption("--samples", argc, argv, false);
+
+    auto is_inst_bbs_path = GetOption("--inst_bbs_file", argc, argv);
+    SAY_INFO("inst_bbs_file = %s\n", is_inst_bbs_path);
 
     auto lib = LoadLibrary(acctest_path);
     if (!lib) {
@@ -105,9 +113,14 @@ int main(int argc, const char** argv)
         SAY_INFO("=========================================================\n");
 
         auto ins = instrumenter();
+        if (is_inst_bbs_path) {
+            ins.set_bbs_inst();
+            ins.set_bbs_inst_all();
+            ins.set_bbs_path(is_inst_bbs_path);
+        }
         vehi.register_handler(&ins);
 
-        ins.set_trans_disasm();
+        //ins.set_trans_disasm();
         ins.set_covbuf_size(512);
         ins.set_fix_dd_refs();
 
@@ -122,7 +135,7 @@ int main(int argc, const char** argv)
         vehi.register_handler(&inproc_fuzz);
 
         inproc_fuzz.set_zero_corp_sample_size(32);
-        inproc_fuzz.set_timeout(1000);
+        inproc_fuzz.set_timeout(500);
         if (g_crash_counts.find(el.name) != g_crash_counts.end()) {
             SAY_INFO("custom crash count\n");
             inproc_fuzz.set_stop_on_unique_crash_count(
@@ -165,10 +178,15 @@ int main(int argc, const char** argv)
             }
         }
 
-        ins.uninstrument_all();
+        if (el.opts & StrcmpCov) {
+            ins.uninstall_strcmpcov();
+        }
+
         vehi.unregister_handler(&inproc_fuzz);
         vehi.unregister_handler(&ins);
+        ins.uninstrument_all();
     }
 
     FreeLibrary(lib);
+    SAY_INFO("All tests are ok\n");
 }

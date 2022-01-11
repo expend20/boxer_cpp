@@ -44,6 +44,11 @@ void instrumenter::install_strcmpcov()
     m_strcmpcov.install(imports);
 }
 
+void instrumenter::uninstall_strcmpcov() 
+{
+    m_strcmpcov.uninstall();
+}
+
 void instrumenter::install_leaks() 
 {
     if (m_inst_mods.size() != 1) {
@@ -55,6 +60,11 @@ void instrumenter::install_leaks()
 
     auto imports = mod->pe.get_imports();
     m_leaks.install(imports);
+}
+
+void instrumenter::uninstall_leaks() 
+{
+    m_leaks.uninstall();
 }
 
 void instrumenter::clear_cov()

@@ -307,8 +307,8 @@ void inprocess_fuzzer::run_one_input(const uint8_t* data, uint32_t size,
         //        ci->code, size, is_unstable);
         { // judge uniqueness by the address of exception
             static std::set<uint32_t> unique_offsets;
-            if (unique_offsets.find(ci->offset) == unique_offsets.end()) {
-                unique_offsets.insert(ci->offset);
+            if (m_unique_offsets.find(ci->offset) == m_unique_offsets.end()) {
+                m_unique_offsets.insert(ci->offset);
                 m_stats.unique_crashes++;
             }
         }
@@ -377,31 +377,33 @@ void inprocess_fuzzer::run_one_input(const uint8_t* data, uint32_t size,
 
 }
 
+// TODO: refactor buggy func
 std::vector<std::vector<uint8_t>>
 inprocess_fuzzer::try_to_fix_strings(uint8_t* data, uint32_t sz)
 {
     auto cmps = m_inst->get_strcmpcov();
     auto cmps_sz = cmps->size();
+    //SAY_INFO("strcmp cov size = .%d\n", cmps_sz);
 
     std::vector<std::vector<uint8_t>> res;
-
     if (!cmps_sz) return res;
 
     for (uint32_t ia = 0; ia < cmps_sz; ia++) {
         // find one random failed string comparison
         auto cmpcase = &((*cmps)[ia]);
 
-        //SAY_INFO("%p %x %p %x, sample %p %x\n", 
+        //SAY_INFO("try to fix strings: %p 0x%x %p 0x%x, sample %p 0x%x\n", 
         //        &cmpcase->buf1[0], cmpcase->buf1.size(),
         //        &cmpcase->buf2[0], cmpcase->buf2.size(),
 		//		data, sz);
 
 		// we can try to predict which buffer belongs to the sample, e.g.
         // if there are no printable characters, we can assume that
-        uint32_t idx = 1;
+        uint32_t idx = 0;
         for (uint32_t i = 0; i < 4 && i < cmpcase->buf2.size(); i++) {
-            if (cmpcase->buf2[i] >= 0x7f || cmpcase->buf2[i] < 0x20) {
-                idx = 0;
+            if (cmpcase->buf2[i] && 
+                    (cmpcase->buf2[i] >= 0x7f || cmpcase->buf2[i] < 0x20)) {
+                idx = 1;
                 break;
             }
         }
@@ -410,6 +412,7 @@ inprocess_fuzzer::try_to_fix_strings(uint8_t* data, uint32_t sz)
         if (idx == 0) {
             cmp = &cmpcase->buf1;
             cmp_needed = &cmpcase->buf2;
+            //SAY_INFO("idx is first\n");
         }
 
         bool patched = false;
@@ -424,35 +427,35 @@ inprocess_fuzzer::try_to_fix_strings(uint8_t* data, uint32_t sz)
                     cmp_needed = &cmpcase->buf2;
                 }
             }
+            //SAY_INFO("Searching pattern %d in buf %p 0x%x\n", k,
+            //        &(*cmp)[0], cmp->size());
+
             // search the pattern in sample data
+            if (sz < cmp->size()) {
+                SAY_FATAL("sz < cmp->size(), 0x%x vs 0x%x\n", sz, cmp->size());
+            }
             for (uint32_t i = 0; i < sz - cmp->size(); i++) {
 
+                //SAY_INFO("memcmp %p %p 0x%x | i 0x%x, sz 0x%x\n", 
+                //        &(*cmp)[0], &data[i], cmp->size(),
+                //        i, sz);
                 if (!memcmp(&(*cmp)[0], &data[i], cmp->size())) {
                     // we've found the place, at lease we believe so :)
                     //SAY_INFO("offset found: 0x%x\n", i);
                     std::vector<uint8_t> new_sample;
-                    new_sample.resize(sz);
+                    // new size could be bigger than original one
+                    auto new_sz = cmp_needed->size() > sz - i ?
+                        i + cmp_needed->size() : sz;
+
+                    new_sample.resize(new_sz);
                     memcpy(&new_sample[0], data, sz);
 
-                    memcpy(&new_sample[i], &(*cmp_needed)[0], cmp->size());
-                    if (cmpcase->should_add_zero &&
-                            sz - (cmp->size() + i) >= 1) {
-                        new_sample[i + cmp->size()] = 0;
-                    }
+                    //SAY_INFO("Writing at %p offset 0x%x 0x%x bytes, buf %p\n", 
+                    //        &new_sample[0], i, cmp_needed->size(), &(*cmp_needed)[0]);
+                    memcpy(&new_sample[i], &(*cmp_needed)[0], 
+                            cmp_needed->size());
+                    //SAY_INFO("Write ok\n");
 
-                    static std::set<std::string> fixed_strings;
-                    std::string s = (char*)&new_sample[i];
-                    if (fixed_strings.find(s) == fixed_strings.end()) {
-                        SAY_INFO("fixed string: %x %x %s\n", i, cmp->size(),
-                                &new_sample[i]);
-                        fixed_strings.insert(std::move(s));
-                        // FIXME:
-                        //if (strstr("NIKON", (const char*)&data[i])) {
-                        //    helper::writeFile("str_nikon2", (char*)data, sz, "wb");
-                        //    memcpy(&data[i], &(*cmp)[0], cmp->size());
-                        //    helper::writeFile("str_nikon1", (char*)data, sz, "wb");
-                        //}
-                    }
                     res.push_back(std::move(new_sample));
                     patched = true;
                     break;
@@ -460,8 +463,8 @@ inprocess_fuzzer::try_to_fix_strings(uint8_t* data, uint32_t sz)
             }
         }
     }
-    SAY_INFO("strcmp inputcases: %d, samples patched: %d\n", 
-            cmps_sz, res.size());
+    //SAY_INFO("strcmp inputcases: %d, samples patched: %d\n", 
+    //        cmps_sz, res.size());
     return std::move(res);
 
 }
@@ -505,19 +508,20 @@ void inprocess_fuzzer::run()
         // get mutation
         auto new_sample = m_mutator.get_next_mutation();
 
+        //SAY_INFO("sample %p 0x%x\n", &new_sample[0], new_sample.size());
         m_inst->clear_strcmpcov();
         // run code
         run_one_input(&new_sample[0], new_sample.size());
 
         // attempt to find and patch strings 
-        if (m_stats.execs % 1000 == 0) {
+        //if (m_stats.execs % 1000 == 0) {
             auto str_samples = try_to_fix_strings(
                     &new_sample[0], new_sample.size());
             for (auto &str_sample: str_samples) {
                 run_one_input(&str_sample[0], str_sample.size());
                 m_stats.strcmp++;
             }
-        }
+        //}
 
         if (m_stop_on_uniq_crash_count && 
                 m_stats.unique_crashes >= m_stop_on_uniq_crash_count) {
@@ -533,4 +537,19 @@ void inprocess_fuzzer::run()
         }
 
     }while(1);
+
+    if (m_thread_ex_thrower) {
+        if (!TerminateThread(m_thread_ex_thrower, 0)) {
+            SAY_ERROR("Can't terminate timeout exception thrower thread %x, "
+                    "%s\n",
+                    m_thread_ex_thrower, 
+                    helper::getLastErrorAsString().c_str());
+        }
+        if (WAIT_FAILED == WaitForSingleObject(m_thread_ex_thrower, INFINITE)) {
+            SAY_ERROR("Can't wait for timeout exception thrower thread %x, "
+                    "%s\n",
+                    m_thread_ex_thrower, 
+                    helper::getLastErrorAsString().c_str());
+        }
+    }
 }

@@ -112,7 +112,9 @@ class instrumenter: public idebug_handler, public iveh_handler {
         void set_covbuf_size(size_t v) { m_opts.covbuf_size = v; };
 
         void install_strcmpcov();
+        void uninstall_strcmpcov();
         void install_leaks();
+        void uninstall_leaks();
 
         uint8_t* get_cov(uint32_t* size);
         uint8_t* get_cmpcov(uint32_t* size);

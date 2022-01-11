@@ -125,9 +125,11 @@ void translator::add_cmpcov_inst(size_t addr, dasm::opcode* op)
         //
         uint32_t loop_len = op->op_width / 8;
         
+        bool is_reg_eq = op->reg0 == op->reg1; // cmp rax, rax 
         // push reg0, reg1
         make_op_1(XED_ICLASS_PUSH, 64, xed_reg(op->reg0_largest));
-        make_op_1(XED_ICLASS_PUSH, 64, xed_reg(op->reg1_largest));
+        if (!is_reg_eq)
+            make_op_1(XED_ICLASS_PUSH, 64, xed_reg(op->reg1_largest));
 
         for (uint32_t i = 0; i < loop_len; i++) {
 
@@ -136,10 +138,12 @@ void translator::add_cmpcov_inst(size_t addr, dasm::opcode* op)
                         xed_reg(op->reg0_largest),
                         xed_imm0(8, 8));
                 ASSERT(new_shr_sz == shr_reg_sz);
-                new_shr_sz = make_op_2(XED_ICLASS_SHR, sizeof(size_t)*8, 
-                        xed_reg(op->reg1_largest),
-                        xed_imm0(8, 8));
-                ASSERT(new_shr_sz == shr_reg_sz);
+                if (!is_reg_eq) {
+                    new_shr_sz = make_op_2(XED_ICLASS_SHR, sizeof(size_t)*8, 
+                            xed_reg(op->reg1_largest),
+                            xed_imm0(8, 8));
+                    ASSERT(new_shr_sz == shr_reg_sz);
+                }
             }
 
             auto cmp_sz = make_op_2(op->iclass, op->op_width, 
@@ -147,6 +151,9 @@ void translator::add_cmpcov_inst(size_t addr, dasm::opcode* op)
                     xed_reg(op->reg1_smallest));
 
             uint32_t full_sz = or_sz + shr_reg_sz * 2 + cmp_sz + jnz_sz;
+            if (is_reg_eq) {
+                full_sz = or_sz + shr_reg_sz * 1 + cmp_sz + jnz_sz;
+            }
             uint32_t relbr = 0;
             if (i == loop_len - 1) {
                 relbr = or_sz;
@@ -170,7 +177,8 @@ void translator::add_cmpcov_inst(size_t addr, dasm::opcode* op)
 
         // pop reg1, reg0
         make_op_1(XED_ICLASS_POP, 64, xed_reg(op->reg1_largest));
-        make_op_1(XED_ICLASS_POP, 64, xed_reg(op->reg0_largest));
+        if (!is_reg_eq)
+            make_op_1(XED_ICLASS_POP, 64, xed_reg(op->reg0_largest));
 
     }
     else if (op->first_op_name == XED_OPERAND_MEM0 &&
@@ -883,13 +891,12 @@ size_t translator::translate(size_t addr,
             }
         }
 
-        if (rip == 0x7ffb41d41b24
-               // || rip == 0x7ffb3ff201fd
-                ) {
-            SAY_INFO("*** setting break***\n");
-            *(char*)get_inst_ptr() = 0xcc;
-            adjust_inst_offset(1);
-        }
+        //if (rip == 0x07FFBEE6B17F0
+        //        ) {
+        //    SAY_INFO("*** setting break***\n");
+        //    *(char*)get_inst_ptr() = 0xcc;
+        //    adjust_inst_offset(1);
+        //}
 
         uint32_t inst_sz = 0;
         if (m_opts.call_to_jmp &&

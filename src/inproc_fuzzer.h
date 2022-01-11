@@ -27,6 +27,7 @@ class inprocess_fuzzer: public iveh_handler {
         void run();
         bool cov_check_by_hash(const uint8_t* data, uint32_t size, 
                 bool* is_unstable);
+
         void set_input(const char* path);
         void set_output(const char* path);
         void set_crash_dir(const char* path);
@@ -106,6 +107,7 @@ class inprocess_fuzzer: public iveh_handler {
         ULONGLONG m_prev_execs = 1;
 
         uint8_t m_stabilize_attempts = 5;
+        std::set<uint32_t> m_unique_offsets;
 };
 
 #endif // _INPROC_FUZZ_
