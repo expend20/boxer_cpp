@@ -6,6 +6,8 @@ set(CMAKE_VERBOSE_MAKEFILE on)
 project("boxer_cpp")
 add_subdirectory(third_party)
 
+enable_language(ASM_NASM)
+
 include_directories(src)
 include_directories(${CMAKE_CURRENT_BINARY_DIR}/third_party/obj/wkit/include)
 include_directories(third_party)
@@ -29,6 +31,7 @@ add_library(boxer_lib
     src/leaks.cpp
     src/inproc_fuzzer.cpp
     src/inproc_harness.cpp
+    src/tools64.asm
     third_party/xxHash/xxhash.c
     )
 
@@ -67,7 +70,6 @@ target_link_libraries(acctest
     "xed.lib"
     )
 
-enable_language(ASM_NASM)
 
 if("${CMAKE_SIZEOF_VOID_P}" STREQUAL "4")
     add_executable(program

@@ -85,7 +85,6 @@ AccTestCase AccTests[] = {
 
 int main(int argc, const char** argv)
 {
-    __debugbreak();
     init_logs(argc, argv);
     auto acctest_path = GetOption("--acctest", argc, argv);
     if (!acctest_path) {

@@ -905,6 +905,30 @@ void instrumenter::print_stats()
             cs.cmpcov_cmp, cs.cmpcov_sub, cs.cmpcov_test
             );
 }
+
+void instrumenter::adjust_restore_context() {
+
+    if (!m_pc_restore_offset) {
+        auto pc = m_restore_ctx.Rip;
+
+        for (uint32_t i = 0; i < 64; i++) {
+            if ( *(uint32_t*)(pc + i) == MARKER_RESTORE_CONTINUE) {
+                m_pc_restore_offset = i + MAGIC_OFFSET_CONTINUE;
+                break;
+            }
+        }
+
+        if (!m_pc_restore_offset) {
+            SAY_FATAL("Can't find magic at %p + 100\n", pc);
+        }
+        SAY_INFO("PC for continuation on exception set %p\n", 
+                m_restore_ctx.Rip);
+    }
+
+    m_restore_ctx.Rip += m_pc_restore_offset;
+    m_restore_ctx.ContextFlags = CONTEXT_CONTROL | CONTEXT_INTEGER;
+}
+
 DWORD instrumenter::handle_veh(_EXCEPTION_POINTERS* ex_info) {
     m_stats.veh_callbacks++;
     m_ctx = ex_info->ContextRecord;
@@ -937,32 +961,35 @@ DWORD instrumenter::handle_veh(_EXCEPTION_POINTERS* ex_info) {
                 break;
             case STATUS_BREAKPOINT:
 
-                if (*(uint32_t*)((size_t)pc + MAGIC_OFFSET_STORE) ==
-                        MARKER_STORE_CONTEXT) {
-                    // search for second magic
-                    size_t pc2 = 0;
-                    for (uint32_t i = 0; i < 64; i++) {
-                        if ( *(uint32_t*)(pc + i) == MARKER_RESTORE_CONTINUE) {
-                            pc2 = pc + i;
-                            break;
-                        }
-                    }
-                    if (!pc2) {
-                        SAY_FATAL("Can't find magic at %p + 100\n", pc);
-                    }
-                    size_t tgt_rip = pc2 + MAGIC_OFFSET_CONTINUE;
-                    memcpy(&m_restore_ctx, m_ctx, sizeof(m_restore_ctx));
-                    m_restore_ctx.Rip = tgt_rip;
-                    //SAY_INFO("PC for continuation on exception set %p\n", 
-                    //        tgt_rip);
-                    m_ctx->Rip++;
-                    res = 1;
-                    SAY_INFO("Context set\n");
-                }
-                else {
-                    should_translate_or_redirect = true;
-                }
-                break;
+                should_translate_or_redirect = true;
+
+                // TEMP: remove me
+                //if (*(uint32_t*)((size_t)pc + MAGIC_OFFSET_STORE) ==
+                //        MARKER_STORE_CONTEXT) {
+                //    // search for second magic
+                //    size_t pc2 = 0;
+                //    for (uint32_t i = 0; i < 64; i++) {
+                //        if ( *(uint32_t*)(pc + i) == MARKER_RESTORE_CONTINUE) {
+                //            pc2 = pc + i;
+                //            break;
+                //        }
+                //    }
+                //    if (!pc2) {
+                //        SAY_FATAL("Can't find magic at %p + 100\n", pc);
+                //    }
+                //    size_t tgt_rip = pc2 + MAGIC_OFFSET_CONTINUE;
+                //    memcpy(&m_restore_ctx, m_ctx, sizeof(m_restore_ctx));
+                //    m_restore_ctx.Rip = tgt_rip;
+                //    //SAY_INFO("PC for continuation on exception set %p\n", 
+                //    //        tgt_rip);
+                //    m_ctx->Rip++;
+                //    res = 1;
+                //    SAY_INFO("Context set\n");
+                //}
+                //else {
+                //    should_translate_or_redirect = true;
+                //}
+                //break;
         }
         if (res) break;
 
@@ -1013,6 +1040,10 @@ DWORD instrumenter::handle_veh(_EXCEPTION_POINTERS* ex_info) {
 
                 handle_crash(ex_code, pc);
                 if (m_restore_ctx.Rip) {
+                    adjust_restore_context();
+                    //SAY_INFO("Crash ctx %p, restore ctx %p\n", m_ctx,
+                    //        &m_restore_ctx);
+                    
                     // restore previously saved context
                     memcpy(m_ctx, &m_restore_ctx, sizeof(*m_ctx));
                 }

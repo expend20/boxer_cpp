@@ -119,6 +119,7 @@ class instrumenter: public idebug_handler, public iveh_handler {
         uint8_t* get_cov(uint32_t* size);
         uint8_t* get_cmpcov(uint32_t* size);
         CONTEXT* get_restore_ctx() { return &m_restore_ctx; };
+        void adjust_restore_context();
         std::vector<strcmp_data>* get_strcmpcov();
 
         void clear_cov();
@@ -144,6 +145,7 @@ class instrumenter: public idebug_handler, public iveh_handler {
                 std::map<size_t, instrumenter_bb_info>* bbs_info, 
                 std::vector<size_t>* two_bytes_bbs);
 
+
     private:
         instrumenter_stats m_stats = {0};
         instrumenter_options m_opts;
@@ -166,6 +168,8 @@ class instrumenter: public idebug_handler, public iveh_handler {
         strcmpcov m_strcmpcov;
         leaks m_leaks;
         crash_info m_crash_info;
+
+        uint32_t m_pc_restore_offset = 0;
 };
 
 #endif // INSTRUMENTER_H

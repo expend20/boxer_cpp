@@ -34,9 +34,10 @@ DWORD inprocess_fuzzer::handle_veh(_EXCEPTION_POINTERS* ex_info)
             auto thread = OpenThread(THREAD_ALL_ACCESS, FALSE, m_thread_id);
             ASSERT(thread);
 
+            m_inst->adjust_restore_context();
             auto ctx = m_inst->get_restore_ctx();
-            //SAY_INFO("Redirecting on timeout %d %p\n", m_stats.timeouts, ctx);
-            ctx->ContextFlags = CONTEXT_ALL;
+            SAY_INFO("Redirecting on timeout %d %p\n", m_stats.timeouts, ctx);
+            ctx->ContextFlags = CONTEXT_CONTROL | CONTEXT_INTEGER;
             auto r = SetThreadContext(thread, ctx);
             ASSERT(r);
             CloseHandle(thread);
@@ -164,6 +165,8 @@ void inprocess_fuzzer::print_stats(bool force)
     }
 }
 
+extern "C" void save_context(_CONTEXT* ctx);
+
 bool inprocess_fuzzer::cov_check_by_hash(const uint8_t* data, uint32_t size,
         bool* is_unstable) 
 {
@@ -185,17 +188,19 @@ bool inprocess_fuzzer::cov_check_by_hash(const uint8_t* data, uint32_t size,
         
         m_start_ticks = GetTickCount64();
 
-        // WANRING: don't place any new code until restore mark, otherwise
-        // adjust offsets in the handle.
-        // We need to capture the current context if we need to force
-        // continuation of the thread (e.g. timeout or exception)
-        if (cached_ret != (size_t)_AddressOfReturnAddress()) {
-            // FIXME: how to save context without interruption on each 
-            // iteration?
-            cached_ret = (size_t)_AddressOfReturnAddress();
-            __debugbreak();
-            store_mark = MARKER_STORE_CONTEXT;
-        }
+        //__debugbreak();
+        save_context(m_inst->get_restore_ctx());
+        //// WANRING: don't place any new code until restore mark, otherwise
+        //// adjust offsets in the handle.
+        //// We need to capture the current context if we need to force
+        //// continuation of the thread (e.g. timeout or exception)
+        //if (cached_ret != (size_t)_AddressOfReturnAddress()) {
+        //    // FIXME: how to save context without interruption on each 
+        //    // iteration?
+        //    cached_ret = (size_t)_AddressOfReturnAddress();
+        //    __debugbreak();
+        //    store_mark = MARKER_STORE_CONTEXT;
+        //}
         // run the sample
         m_harness_inproc->call_fuzz_proc((const char*)g_sanity_data, 
                 g_sanity_size);
