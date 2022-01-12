@@ -41,8 +41,6 @@ AccTestCase AccTests[] = {
     
     {"FuzzMeDWORD", CmpCov, Crash},
     {"FuzzMeStack", BitCov | CmpCov, Crash},
-    //{"FuzzMeOOBR", BitCov, Crash}, // works only with verifier
-    //{"FuzzMeHeapCorruption", BitCov | CmpCov, Crash}, // how can we restore after this?
     {"FuzzMeMyMemcmp", IncCov | CmpCov, Crash},
     {"FuzzMePatternMatch_idx", IncCov | CmpCov, Crash},
     
@@ -61,7 +59,6 @@ AccTestCase AccTests[] = {
     {"FuzzStr3", StrcmpCov, Crash},
     {"FuzzMeBigStr", IncCov, Crash}, // grow buf
     {"FuzzMeNotSoBigStr", IncCov, Crash}, // shrink buf
-    //{"FuzzMeWithoutSymbolic", IncCov, Crash}, // it's working but takes too much time
     {"FuzzMeAvoid", CmpCov, Crash}, 
     
     {"FuzzMeSubRegImm", CmpCov, Crash},
@@ -71,10 +68,13 @@ AccTestCase AccTests[] = {
     {"FuzzStr6", StrcmpCov, Crash},
     {"FuzzStr7", StrcmpCov, Crash},
     
+    //{"FuzzMeWithoutSymbolic", IncCov, Crash}, // it's working but takes too much time
+    //{"FuzzMeOOBR", BitCov, Crash}, // works only with verifier
+    //{"FuzzMeHeapCorruption", BitCov | CmpCov, Crash}, // how can we restore after this?
     //{"FuzzMe8", HashCov, Crash}, // takes a while, hashcov only
+
     //{"FuzzMeStackOverflow", BitCov, Crash}, // TODO: process stop
     //{"FuzzMeStackChkstk", BitCov | CmpCov, Crash}, // TODO: process stop
-    //
     //{"FuzzMeSubRegReg", CmpCov, Crash}, // TODO: implement in acctest
     //{"FuzzMeSubMemReg", CmpCov, Crash}, // TODO: implement in acctest 
     //{"FuzzMeSubStkReg", CmpCov, Crash}, // TODO: implement in acctest
@@ -134,7 +134,9 @@ int main(int argc, const char** argv)
         vehi.register_handler(&inproc_fuzz);
 
         inproc_fuzz.set_zero_corp_sample_size(32);
-        inproc_fuzz.set_timeout(500);
+        if (el.result & Timeout) {
+            inproc_fuzz.set_timeout(500);
+        }
         if (g_crash_counts.find(el.name) != g_crash_counts.end()) {
             SAY_INFO("custom crash count\n");
             inproc_fuzz.set_stop_on_unique_crash_count(

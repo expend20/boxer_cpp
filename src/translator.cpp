@@ -55,13 +55,13 @@ bool translator::is_target_le_8bits(dasm::opcode* op)
 void translator::add_cmpcov_inst(size_t addr, dasm::opcode* op) 
 {
     // TODO: if add/sub, shouldn't we compare the result of addition/subraction?
-    // TODO: use test opcode for test opcodes
 
     //SAY_INFO("instrumenting %x cmp %p\n", m_cmpcov_offset, addr);
-    size_t entry_offset = m_inst_offset;
-    auto should_break = false;
+    auto entry_offset = m_inst_offset;
+    auto start_inst_ptr = get_inst_ptr();
 
-    // it sould be `cmp [mem], reg` not `cmp reg, [mem]`
+    // NOTE: operands order does mater, it sould be `cmp [mem], reg` not 
+    // `cmp reg, [mem]`
     ASSERT(op->mem_len1 == 0);
 
     adjust_stack_red_zone();
@@ -69,12 +69,14 @@ void translator::add_cmpcov_inst(size_t addr, dasm::opcode* op)
     uint32_t shr_reg_sz = 4;
     uint32_t jnz_sz = 6;
     uint32_t or_sz = 7;
+    uint8_t all_bits = 0;
+    uint32_t loop_len = 0;
 
     if (op->first_op_name == XED_OPERAND_REG0 &&
             op->second_op_name == XED_OPERAND_IMM0){
         // cmp edx, 0x31333337
         //uint32_t loop_len = op->imm_width / 8;
-        uint32_t loop_len = op->op_width / 8;
+        loop_len = op->op_width / 8;
         //SAY_INFO("loop %d, largets %s, lowest %s\n", loop_len, 
         //        xed_reg_enum_t2str(op->reg0_largest),
         //        xed_reg_enum_t2str(op->reg0_smallest));
@@ -123,7 +125,7 @@ void translator::add_cmpcov_inst(size_t addr, dasm::opcode* op)
             op->second_op_name == XED_OPERAND_REG1) {
         // cmp rax, rcx
         //
-        uint32_t loop_len = op->op_width / 8;
+        loop_len = op->op_width / 8;
         
         bool is_reg_eq = op->reg0 == op->reg1; // cmp rax, rax 
         // push reg0, reg1
@@ -185,7 +187,7 @@ void translator::add_cmpcov_inst(size_t addr, dasm::opcode* op)
             op->second_op_name == XED_OPERAND_IMM0){
         // cmp dword ptr [rbx], 0x46464952
 
-        uint32_t loop_len = op->op_width / 8;
+        loop_len = op->op_width / 8;
 
         make_op_1(XED_ICLASS_PUSH, 64, xed_reg(XED_REG_RAX_EAX));
         auto prop_reg = dasm::opcode::get_reg_from_largest(
@@ -271,7 +273,7 @@ void translator::add_cmpcov_inst(size_t addr, dasm::opcode* op)
         // cmp qword ptr [rbx], rdi
         ASSERT(op->mem_len0 == op->op_width);
 
-        uint32_t loop_len = op->op_width / 8;
+        loop_len = op->op_width / 8;
         //uint32_t loop_len = op->mem_len0 / 8;
 
         auto prop_reg_largest = dasm::opcode::get_reg_except_this_list(
@@ -366,10 +368,16 @@ void translator::add_cmpcov_inst(size_t addr, dasm::opcode* op)
 
     adjust_stack_red_zone_back();
 
+    ASSERT(loop_len);
+    cmpcov_info ci = { (size_t)start_inst_ptr, (size_t)get_inst_ptr(), 
+        (1 << loop_len) - 1};
+    //SAY_INFO("cmpinfo %x %p %p %x %x\n", m_cmpcov_offset, ci.start, ci.end,
+    //        loop_len, ci.all_bits);
+    m_cmpcov_info.push_back(ci);
+
     adjust_cmpcov_offset(1);
 
     ASSERT(m_inst_offset - entry_offset >= 5); // to place jump
-    if (should_break) __debugbreak();
 }
 
 void translator::adjust_cmpcov_offset(size_t v)
@@ -547,7 +555,7 @@ uint32_t translator::translate_call_to_jump(
     uint32_t inst_size = 0;
     //SAY_DEBUG("Making push... %p %d\n", buf, buf_size);
 
-    // TinyInst approach:
+    // TinyInst's approach:
     // lea     rsp,[rsp-8]
     // mov     dword ptr [rsp],0C6BE108Ch
     // mov     dword ptr [rsp+4],7FF6h
@@ -779,7 +787,7 @@ uint32_t translator::make_jump_from_orig_to_inst(
     uint32_t inst_size = 5;
 
     size_t bits = 32;
-    size_t disp = jump_to - (jump_from + 5);
+    size_t disp = jump_to - (jump_from + inst_size);
     auto op = dasm::maker();
     xed_inst1(&op.enc_inst, op.dstate,
             XED_ICLASS_JMP, 32,
@@ -787,6 +795,32 @@ uint32_t translator::make_jump_from_orig_to_inst(
     auto new_inst_size = op.make(
             (uint8_t*)(m_text_sect->addr_loc_raw() + text_offset), 
             inst_size);
+    ASSERT(new_inst_size == inst_size);
+    return new_inst_size;
+}
+
+// This functions suggests overwring of code (not sequential write like others
+// make_jump_* ones
+uint32_t translator::make_jump_from_inst_to_inst(
+        size_t jump_from, size_t jump_to) 
+{
+
+    uint32_t inst_size = 5;
+    ASSERT(jump_to - jump_from >= inst_size);
+
+    size_t bits = 32;
+    size_t disp = jump_to - (jump_from + inst_size);
+
+    size_t inst_offset = jump_from - m_inst_code->addr_remote();
+
+    auto op = dasm::maker();
+    xed_inst1(&op.enc_inst, op.dstate,
+            XED_ICLASS_JMP, 32,
+            xed_relbr((uint32_t)disp, 32));
+    auto new_inst_size = op.make(
+            (uint8_t*)(m_inst_code->addr_loc_raw() + inst_offset), 
+            inst_size);
+
     ASSERT(new_inst_size == inst_size);
     return new_inst_size;
 }
@@ -870,9 +904,7 @@ size_t translator::translate(size_t addr,
                 auto op_next = m_dasm_cache.get(local_addr + op->size_orig,
                         rip + op->size_orig);
                 if (op_next->is_cond_jump()) {
-
-                    if (op->iclass == XED_ICLASS_SUB) m_stats.cmpcov_sub++;
-
+                    m_stats.cmpcov_sub++;
                     should_add_cmp_inst = true;
                 }
             }
@@ -915,14 +947,8 @@ size_t translator::translate(size_t addr,
         inst_count += 1;
 
         if (op->branch_disp_width) {
-            //if (op->category == XED_CATEGORY_CALL && m_opts.call_to_jmp) {
-            //}
-            //else {
-                // keep track of jumps, while they are not poiting to the 
-                // instrumented code
-                m_remote_dd_refs.insert(
-                        m_inst_code->addr_remote() + m_inst_offset - 4);
-            //}
+            m_remote_dd_refs.insert(
+                    m_inst_code->addr_remote() + m_inst_offset - 4);
         }
 
         if (op->category == XED_CATEGORY_CALL && m_opts.call_to_jmp) {

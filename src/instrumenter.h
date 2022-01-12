@@ -12,9 +12,7 @@
 #include <string>
 #include <vector>
 
-#define MARKER_STORE_CONTEXT (0x1337 + 0)
 #define MARKER_RESTORE_CONTINUE (0x1337 + 1)
-
 
 struct instrumenter_bb_info {
     uint32_t orig_size = 0;
@@ -32,6 +30,7 @@ struct instrumenter_stats {
     size_t rip_redirections = 0;
     size_t bb_skipped_less_5 = 0;
     size_t bb_skipped_less_2 = 0;
+    size_t cmpcov_cleaned = 0;
 };
 
 struct instrumenter_options {
@@ -124,6 +123,7 @@ class instrumenter: public idebug_handler, public iveh_handler {
 
         void clear_cov();
         void clear_cmpcov();
+        void clear_passed_cmpcov_code();
         void clear_strcmpcov();
         void clear_leaks();
 
@@ -170,6 +170,8 @@ class instrumenter: public idebug_handler, public iveh_handler {
         crash_info m_crash_info;
 
         uint32_t m_pc_restore_offset = 0;
+
+        std::map<size_t, instrumenter_bb_info> m_bbs_info;
 };
 
 #endif // INSTRUMENTER_H

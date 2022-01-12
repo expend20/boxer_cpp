@@ -30,6 +30,12 @@ struct translator_stats {
     size_t translated_bbs = 0;
 };
 
+struct cmpcov_info {
+    size_t start = 0;
+    size_t end = 0;
+    uint8_t all_bits = 0;
+};
+
 class translator {
 
     public:
@@ -46,6 +52,7 @@ class translator {
                 uint32_t* original_size);
 
         uint32_t make_jump_from_orig_to_inst(size_t jump_from, size_t jump_to);
+        uint32_t make_jump_from_inst_to_inst(size_t jump_from, size_t jump_to);
         uint32_t make_1byte_jump_from_orig_to_orig( size_t jump_from, 
                 size_t jump_to);
         void fix_dd_refs();
@@ -59,7 +66,8 @@ class translator {
         void set_bbs(std::set<size_t>* p) { m_bbs = p; };
 
         translator_stats* get_stats() { return &m_stats; };
-        uint32_t get_cmpinst_size() { return m_cmpcov_offset; };
+        uint32_t get_cmpcov_offset() { return m_cmpcov_offset; };
+        std::vector<cmpcov_info>* get_cmpcov_info() { return &m_cmpcov_info; };
 
     private:
         uint8_t* get_inst_ptr();
@@ -92,6 +100,8 @@ class translator {
 
         uint32_t make_op_2(xed_iclass_enum_t iclass, uint32_t bits, 
                 xed_encoder_operand_t op1, xed_encoder_operand_t op2);
+
+        std::vector<cmpcov_info> m_cmpcov_info;
 
     private:
         mem_tool*         m_inst_code = NULL;

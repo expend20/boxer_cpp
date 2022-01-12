@@ -81,6 +81,39 @@ void instrumenter::clear_cov()
     mod->cov.end();
 }
 
+void instrumenter::clear_passed_cmpcov_code()
+{
+    if (m_inst_mods.size() != 1) {
+        SAY_FATAL("Only one inst module is currently supported, got %d\n", 
+                m_inst_mods.size());
+    }
+    
+    auto mod = &(m_inst_mods.begin()->second);
+    auto data = (uint8_t*)mod->cmpcov.begin_addr_loc();
+    auto ci = mod->translator.get_cmpcov_info();
+    auto offset = mod->translator.get_cmpcov_offset();
+    bool unlocked = false;
+    for (uint32_t i = 0; i < offset; i++) {
+        if (data[i] && 
+                (*ci)[i].all_bits && 
+                data[i] == (*ci)[i].all_bits) {
+
+            if (!unlocked) {
+                mod->inst.make_writeable();
+                unlocked = true;
+            }
+
+            //SAY_INFO("Let's clear cmp %x %p %p\n", i, (*ci)[i].start, 
+            //        (*ci)[i].end);
+            mod->translator.make_jump_from_inst_to_inst((*ci)[i].start, 
+                    (*ci)[i].end);
+            m_stats.cmpcov_cleaned++;
+        }
+    }
+    if (unlocked) mod->inst.restore_prev_protection();
+    mod->cmpcov.end();
+}
+
 void instrumenter::clear_cmpcov()
 {
     if (m_inst_mods.size() != 1) {
@@ -89,7 +122,7 @@ void instrumenter::clear_cmpcov()
     }
     auto mod = &(m_inst_mods.begin()->second);
     memset((void*)mod->cmpcov.begin_addr_loc(), 0, 
-            mod->translator.get_cmpinst_size());
+            mod->translator.get_cmpcov_offset());
     mod->cmpcov.end();
 }
 
@@ -120,11 +153,11 @@ uint8_t* instrumenter::get_cmpcov(uint32_t* size)
     mod->cmpcov.read();
     uint8_t* res = (uint8_t*)mod->cmpcov.addr_loc_raw();
     if (size) 
-        *size = (uint32_t)mod->translator.get_cmpinst_size();
+        *size = (uint32_t)mod->translator.get_cmpcov_offset();
 
     static bool is_shown = false;
     if (!is_shown) {
-        SAY_INFO("cmpcov size %d\n", mod->translator.get_cmpinst_size());
+        SAY_INFO("cmpcov size %d\n", mod->translator.get_cmpcov_offset());
         is_shown = true;
     }
 
@@ -288,14 +321,13 @@ void instrumenter::translate_all_bbs()
     uint32_t prev_vec_size = 20;
 
     std::vector<size_t> two_bytes_bbs;
-    std::map<size_t, instrumenter_bb_info> bbs_info;
     
     for (auto &addr: m_bbs) {
 
         uint32_t inst_size = 0;
         uint32_t orig_size = 0;
         auto inst_addr = trans->translate(addr, &inst_size, &orig_size);
-        bbs_info[addr].orig_size = orig_size;
+        m_bbs_info[addr].orig_size = orig_size;
         ASSERT(inst_addr);
 
         if (m_opts.show_flow) continue;
@@ -317,13 +349,13 @@ void instrumenter::translate_all_bbs()
             //    }
             //    //__debugbreak();
             //}
-            bbs_info[addr].bytes_taken = jump_size;
+            m_bbs_info[addr].bytes_taken = jump_size;
             //SAY_INFO("taken %p %d\n", addr, jump_size);
 
         } 
         else if (orig_size < 5 && orig_size >= 2) {
             // add to second pass
-            bbs_info[addr].bytes_taken = 2;
+            m_bbs_info[addr].bytes_taken = 2;
             two_bytes_bbs.push_back(addr);
         }
         else if (orig_size < 2) {
@@ -353,7 +385,7 @@ void instrumenter::translate_all_bbs()
             trans->fix_dd_refs();
 
         SAY_INFO("Fixing two bytes bb...\n");
-        fix_two_bytes_bbs(trans, &bbs_info, &two_bytes_bbs);
+        fix_two_bytes_bbs(trans, &m_bbs_info, &two_bytes_bbs);
     }
 
     // Call commit on inst code
@@ -846,13 +878,14 @@ DWORD instrumenter::handle_exception(EXCEPTION_DEBUG_INFO* dbg_info)
                 }
             }
 
-            if (*(uint32_t*)((size_t)rec->ExceptionAddress + 
-                        MAGIC_OFFSET_STORE) == MARKER_STORE_CONTEXT) {
-                SAY_INFO("PC for continuation on exception %p\n", 
-                        rec->ExceptionAddress);
-                //memcpy(&m_restore_ctx, m_ctx, sizeof(m_restore_ctx));
-                __debugbreak();
-            }
+            __debugbreak();
+            // TODO: store context
+            //if (*(uint32_t*)((size_t)rec->ExceptionAddress + 
+            //            MAGIC_OFFSET_STORE) == MARKER_STORE_CONTEXT) {
+            //    SAY_INFO("PC for continuation on exception %p\n", 
+            //            rec->ExceptionAddress);
+            //    //memcpy(&m_restore_ctx, m_ctx, sizeof(m_restore_ctx));
+            //}
             break;
         }
         case STATUS_STACK_OVERFLOW: {
@@ -889,7 +922,7 @@ void instrumenter::print_stats()
             "\t %d pc redirections\n"
 
             "\t %d translated bb, skipped [ %d <5 | %d <2 ] \n"
-            "\t %d cmpcov [ %d cmp | %d test | %d sub ]\n",
+            "\t %d cmpcov [ %d cmp | %d test | %d sub ] %d cleaned\n",
 
             m_inst_mods.size(), m_stats.dbg_callbacks, m_stats.veh_callbacks,
 
@@ -902,7 +935,8 @@ void instrumenter::print_stats()
             m_stats.bb_skipped_less_5, m_stats.bb_skipped_less_2,
 
             cs.cmpcov_cmp + cs.cmpcov_sub + cs.cmpcov_test,
-            cs.cmpcov_cmp, cs.cmpcov_sub, cs.cmpcov_test
+            cs.cmpcov_cmp, cs.cmpcov_sub, cs.cmpcov_test,
+            m_stats.cmpcov_cleaned
             );
 }
 
@@ -963,33 +997,6 @@ DWORD instrumenter::handle_veh(_EXCEPTION_POINTERS* ex_info) {
 
                 should_translate_or_redirect = true;
 
-                // TEMP: remove me
-                //if (*(uint32_t*)((size_t)pc + MAGIC_OFFSET_STORE) ==
-                //        MARKER_STORE_CONTEXT) {
-                //    // search for second magic
-                //    size_t pc2 = 0;
-                //    for (uint32_t i = 0; i < 64; i++) {
-                //        if ( *(uint32_t*)(pc + i) == MARKER_RESTORE_CONTINUE) {
-                //            pc2 = pc + i;
-                //            break;
-                //        }
-                //    }
-                //    if (!pc2) {
-                //        SAY_FATAL("Can't find magic at %p + 100\n", pc);
-                //    }
-                //    size_t tgt_rip = pc2 + MAGIC_OFFSET_CONTINUE;
-                //    memcpy(&m_restore_ctx, m_ctx, sizeof(m_restore_ctx));
-                //    m_restore_ctx.Rip = tgt_rip;
-                //    //SAY_INFO("PC for continuation on exception set %p\n", 
-                //    //        tgt_rip);
-                //    m_ctx->Rip++;
-                //    res = 1;
-                //    SAY_INFO("Context set\n");
-                //}
-                //else {
-                //    should_translate_or_redirect = true;
-                //}
-                //break;
         }
         if (res) break;
 

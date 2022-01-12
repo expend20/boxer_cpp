@@ -188,19 +188,7 @@ bool inprocess_fuzzer::cov_check_by_hash(const uint8_t* data, uint32_t size,
         
         m_start_ticks = GetTickCount64();
 
-        //__debugbreak();
         save_context(m_inst->get_restore_ctx());
-        //// WANRING: don't place any new code until restore mark, otherwise
-        //// adjust offsets in the handle.
-        //// We need to capture the current context if we need to force
-        //// continuation of the thread (e.g. timeout or exception)
-        //if (cached_ret != (size_t)_AddressOfReturnAddress()) {
-        //    // FIXME: how to save context without interruption on each 
-        //    // iteration?
-        //    cached_ret = (size_t)_AddressOfReturnAddress();
-        //    __debugbreak();
-        //    store_mark = MARKER_STORE_CONTEXT;
-        //}
         // run the sample
         m_harness_inproc->call_fuzz_proc((const char*)g_sanity_data, 
                 g_sanity_size);
@@ -367,7 +355,10 @@ void inprocess_fuzzer::run_one_input(const uint8_t* data, uint32_t size,
             m_stats.cmpcov_bits++;
             should_add_to_corpus = true;
             should_save_to_disk = true;
-            // TODO: clear passed cmp cases
+
+            // clear passed cmp cases
+            m_inst->clear_passed_cmpcov_code();
+
         }
     }
 
