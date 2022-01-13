@@ -10,7 +10,7 @@ enum AccTestCaseOption {
     IncCov = 1 << 1,
     HashCov = 1 << 2,
     StrcmpCov = 1 << 3,
-    CmpCov = 1 << 3,
+    CmpCov = 1 << 4,
 };
 
 enum AccTestCaseResult {
@@ -53,20 +53,20 @@ AccTestCase AccTests[] = {
     {"FuzzMeCmpRegRel", CmpCov, Crash},
     {"FuzzMeTestRegReg", CmpCov, Crash},
     
-    {"FuzzStr0", StrcmpCov, Crash},
-    {"FuzzStr1", StrcmpCov, Crash},
-    {"FuzzStr2", StrcmpCov, Crash},
-    {"FuzzStr3", StrcmpCov, Crash},
+    {"FuzzStr0", BitCov | StrcmpCov, Crash},
+    {"FuzzStr1", BitCov | StrcmpCov, Crash},
+    {"FuzzStr2", BitCov | StrcmpCov, Crash},
+    {"FuzzStr3", BitCov | StrcmpCov, Crash},
     {"FuzzMeBigStr", IncCov, Crash}, // grow buf
     {"FuzzMeNotSoBigStr", IncCov, Crash}, // shrink buf
     {"FuzzMeAvoid", CmpCov, Crash}, 
     
     {"FuzzMeSubRegImm", CmpCov, Crash},
 
-    {"FuzzStr4", StrcmpCov, Crash},
-    {"FuzzStr5", StrcmpCov, Crash},
-    {"FuzzStr6", StrcmpCov, Crash},
-    {"FuzzStr7", StrcmpCov, Crash},
+    {"FuzzStr4", BitCov | StrcmpCov, Crash},
+    {"FuzzStr5", BitCov | StrcmpCov, Crash},
+    {"FuzzStr6", BitCov | StrcmpCov, Crash},
+    {"FuzzStr7", BitCov | StrcmpCov, Crash},
     
     //{"FuzzMeWithoutSymbolic", IncCov, Crash}, // it's working but takes too much time
     //{"FuzzMeOOBR", BitCov, Crash}, // works only with verifier
@@ -92,6 +92,7 @@ int main(int argc, const char** argv)
         return -1;
     }
     auto save_samples = GetBinaryOption("--samples", argc, argv, false);
+    auto is_disasm = GetBinaryOption("--disasm", argc, argv, false);
 
     auto is_inst_bbs_path = GetOption("--inst_bbs_file", argc, argv);
     SAY_INFO("inst_bbs_file = %s\n", is_inst_bbs_path);
@@ -114,12 +115,13 @@ int main(int argc, const char** argv)
         auto ins = instrumenter();
         if (is_inst_bbs_path) {
             ins.set_bbs_inst();
-            ins.set_bbs_inst_all();
+            //ins.set_bbs_inst_all();
             ins.set_bbs_path(is_inst_bbs_path);
         }
         vehi.register_handler(&ins);
 
-        //ins.set_trans_disasm();
+        if (is_disasm)
+            ins.set_trans_disasm();
         ins.set_covbuf_size(512);
         ins.set_fix_dd_refs();
 

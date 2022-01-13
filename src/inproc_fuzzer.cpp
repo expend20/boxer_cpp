@@ -4,7 +4,7 @@
 
 #include <intrin.h>
 
-#define TIMEOUT_CHECK 0x11223301
+#define TIMEOUT_CHECK (0x00112233 + 1)
 
 // We need access to that data during timeout and exception, so it should
 // hopefully be valid during the interruption
@@ -36,7 +36,7 @@ DWORD inprocess_fuzzer::handle_veh(_EXCEPTION_POINTERS* ex_info)
 
             m_inst->adjust_restore_context();
             auto ctx = m_inst->get_restore_ctx();
-            SAY_INFO("Redirecting on timeout %d %p\n", m_stats.timeouts, ctx);
+            SAY_INFO("Redirecting on timeout %llu %p\n", m_stats.timeouts, ctx);
             ctx->ContextFlags = CONTEXT_CONTROL | CONTEXT_INTEGER;
             auto r = SetThreadContext(thread, ctx);
             ASSERT(r);
@@ -144,11 +144,11 @@ void inprocess_fuzzer::print_stats(bool force)
 
         ULONGLONG newExecs = m_stats.execs - m_prev_execs;
         auto fcps = (double)newExecs / m_stats_sec_timeout;
-        SAY_INFO("%8.2f fcps (%8.2f avg) %10d new bits %10d new inc\n"
-                "%10d (%d) crashes, %10d timeouts, %10d total execs, "
-                " %10d new execs\n"
-                "%10d stable cov, %10d unstable cov, %10d cmpcov bits\n"
-                "%10d strcmp\n",
+        SAY_INFO("%8.2f fcps (%8.2f avg) %10llu new bits %10llu new inc\n"
+                "%10llu (%llu) crashes, %10llu timeouts, %10llu total execs, "
+                " %10llu new execs\n"
+                "%10llu stable cov, %10llu unstable cov, %10llu cmpcov bits\n"
+                "%10llu strcmp\n",
                 fcps,
                 (double)m_stats.execs / (m_print_stats_count * m_stats_sec_timeout),
                 m_stats.new_bits, m_stats.new_inc,
@@ -165,7 +165,7 @@ void inprocess_fuzzer::print_stats(bool force)
     }
 }
 
-extern "C" void save_context(_CONTEXT* ctx);
+extern "C" void __fastcall save_context(_CONTEXT* ctx);
 
 bool inprocess_fuzzer::cov_check_by_hash(const uint8_t* data, uint32_t size,
         bool* is_unstable) 
@@ -428,7 +428,8 @@ inprocess_fuzzer::try_to_fix_strings(uint8_t* data, uint32_t sz)
 
             // search the pattern in sample data
             if (sz < cmp->size()) {
-                SAY_FATAL("sz < cmp->size(), 0x%x vs 0x%x\n", sz, cmp->size());
+                SAY_ERROR("sz < cmp->size(), 0x%x vs 0x%x\n", sz, cmp->size());
+                continue;
             }
             for (uint32_t i = 0; i < sz - cmp->size(); i++) {
 

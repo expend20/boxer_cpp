@@ -1,0 +1,1 @@
+cmake --build . --config RelWithDebInfo && RelWithDebInfo\acctest.exe --acctest src\tests\RelWithDebInfo\acc_test.dll --inst_bbs_file ..\scripts\\acc_test.dll.32.bbs

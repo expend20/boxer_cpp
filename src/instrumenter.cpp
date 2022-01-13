@@ -943,7 +943,11 @@ void instrumenter::print_stats()
 void instrumenter::adjust_restore_context() {
 
     if (!m_pc_restore_offset) {
+#ifdef _WIN64
         auto pc = m_restore_ctx.Rip;
+#else
+        auto pc = m_restore_ctx.Eip;
+#endif
 
         for (uint32_t i = 0; i < 64; i++) {
             if ( *(uint32_t*)(pc + i) == MARKER_RESTORE_CONTINUE) {
@@ -955,11 +959,14 @@ void instrumenter::adjust_restore_context() {
         if (!m_pc_restore_offset) {
             SAY_FATAL("Can't find magic at %p + 100\n", pc);
         }
-        SAY_INFO("PC for continuation on exception set %p\n", 
-                m_restore_ctx.Rip);
+        SAY_INFO("PC set %p -> %p\n", pc, pc + m_pc_restore_offset);
     }
 
+#ifdef _WIN64
     m_restore_ctx.Rip += m_pc_restore_offset;
+#else
+    m_restore_ctx.Eip += m_pc_restore_offset;
+#endif
     m_restore_ctx.ContextFlags = CONTEXT_CONTROL | CONTEXT_INTEGER;
 }
 
@@ -1015,7 +1022,11 @@ DWORD instrumenter::handle_veh(_EXCEPTION_POINTERS* ex_info) {
             //SAY_WARN("C++ exception: .exr %p, at %p\n",
             //        ex_info->ExceptionRecord, 
             //        ex_info->ExceptionRecord->ExceptionAddress);
+#ifdef _WIN64
             if (m_restore_ctx.Rip) {
+#else 
+            if (m_restore_ctx.Eip) {
+#endif
                 // restore previously saved context
                 memcpy(m_ctx, &m_restore_ctx, sizeof(*m_ctx));
                 res = 1;
@@ -1046,7 +1057,11 @@ DWORD instrumenter::handle_veh(_EXCEPTION_POINTERS* ex_info) {
             case STATUS_ACCESS_VIOLATION:
 
                 handle_crash(ex_code, pc);
+#ifdef _WIN64
                 if (m_restore_ctx.Rip) {
+#else 
+                if (m_restore_ctx.Eip) {
+#endif
                     adjust_restore_context();
                     //SAY_INFO("Crash ctx %p, restore ctx %p\n", m_ctx,
                     //        &m_restore_ctx);
@@ -1055,7 +1070,8 @@ DWORD instrumenter::handle_veh(_EXCEPTION_POINTERS* ex_info) {
                     memcpy(m_ctx, &m_restore_ctx, sizeof(*m_ctx));
                 }
                 else { 
-                    SAY_FATAL("Crash happened, but context was not stored\n");
+                    SAY_FATAL("Crash happened, but context was not stored %p\n",
+                            &m_restore_ctx);
                 }
                 res = 1;
                 break;

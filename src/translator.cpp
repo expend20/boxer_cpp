@@ -2,21 +2,21 @@
 #include "say.h"
 #include "dasm.h"
 
+#define PS sizeof(size_t) // pointer's size
+
 #ifdef _WIN64
 
 #define XED_REG_PC XED_REG_RIP
 #define XED_REG_PC_INVALID XED_REG_RIP
 #define XED_REG_SP XED_REG_RSP
-#define IF_X64_X86(val64, val32) (val64)
-#define XED_REG_RAX_EAX XED_REG_RAX
+#define X64_OR_X86(val64, val32) (val64)
 
 #else
 
 #define XED_REG_PC XED_REG_EIP
 #define XED_REG_PC_INVALID XED_REG_INVALID
 #define XED_REG_SP XED_REG_ESP
-#define IF_X64_X86(val64, val32) (val32)
-#define XED_REG_RAX_EAX XED_REG_EAX
+#define X64_OR_X86(val64, val32) (val32)
 
 #endif
 
@@ -66,12 +66,13 @@ void translator::add_cmpcov_inst(size_t addr, dasm::opcode* op)
 
     adjust_stack_red_zone();
 
-    uint32_t shr_reg_sz = 4;
+    uint32_t shr_reg_sz = X64_OR_X86(4, 3);
     uint32_t jnz_sz = 6;
     uint32_t or_sz = 7;
     uint8_t all_bits = 0;
     uint32_t loop_len = 0;
 
+    //SAY_INFO("%p\n", get_inst_ptr());
     if (op->first_op_name == XED_OPERAND_REG0 &&
             op->second_op_name == XED_OPERAND_IMM0){
         // cmp edx, 0x31333337
@@ -87,7 +88,7 @@ void translator::add_cmpcov_inst(size_t addr, dasm::opcode* op)
             uint8_t curr_cmp_imm = (op->imm >> (i * 8)) & 0xff;
 
             if (i) {
-                auto new_shr_sz = make_op_2(XED_ICLASS_SHR, sizeof(size_t)*8, 
+                auto new_shr_sz = make_op_2(XED_ICLASS_SHR, 64, 
                         xed_reg(op->reg0_largest),
                         xed_imm0(8, 8));
                 ASSERT(new_shr_sz == shr_reg_sz);
@@ -111,7 +112,7 @@ void translator::add_cmpcov_inst(size_t addr, dasm::opcode* op)
             size_t tgt_addr = m_cmpcov_offset + m_cmpcov_buf->addr_remote();
             size_t inst_end = (size_t)m_inst_code->addr_remote() +
                 m_inst_offset + or_sz;
-            uint32_t disp = tgt_addr - inst_end;
+            uint32_t disp = X64_OR_X86(tgt_addr - inst_end, tgt_addr);
 
             auto new_or_sz = make_op_2(XED_ICLASS_OR, 8, 
                     xed_mem_bd(XED_REG_PC_INVALID, xed_disp(disp, 32), 8),
@@ -136,12 +137,12 @@ void translator::add_cmpcov_inst(size_t addr, dasm::opcode* op)
         for (uint32_t i = 0; i < loop_len; i++) {
 
             if (i) {
-                auto new_shr_sz = make_op_2(XED_ICLASS_SHR, sizeof(size_t)*8, 
+                auto new_shr_sz = make_op_2(XED_ICLASS_SHR, 64, 
                         xed_reg(op->reg0_largest),
                         xed_imm0(8, 8));
                 ASSERT(new_shr_sz == shr_reg_sz);
                 if (!is_reg_eq) {
-                    new_shr_sz = make_op_2(XED_ICLASS_SHR, sizeof(size_t)*8, 
+                    new_shr_sz = make_op_2(XED_ICLASS_SHR, 64, 
                             xed_reg(op->reg1_largest),
                             xed_imm0(8, 8));
                     ASSERT(new_shr_sz == shr_reg_sz);
@@ -169,7 +170,7 @@ void translator::add_cmpcov_inst(size_t addr, dasm::opcode* op)
             size_t tgt_addr = m_cmpcov_offset + m_cmpcov_buf->addr_remote();
             size_t inst_end = (size_t)m_inst_code->addr_remote() +
                 m_inst_offset + or_sz;
-            uint32_t disp = tgt_addr - inst_end;
+            uint32_t disp = X64_OR_X86(tgt_addr - inst_end, tgt_addr);
 
             auto new_or_sz = make_op_2(XED_ICLASS_OR, 8, 
                     xed_mem_bd(XED_REG_PC_INVALID, xed_disp(disp, 32), 8),
@@ -189,9 +190,9 @@ void translator::add_cmpcov_inst(size_t addr, dasm::opcode* op)
 
         loop_len = op->op_width / 8;
 
-        make_op_1(XED_ICLASS_PUSH, 64, xed_reg(XED_REG_RAX_EAX));
+        make_op_1(XED_ICLASS_PUSH, 64, xed_reg(XED_REG_RAX));
         auto prop_reg = dasm::opcode::get_reg_from_largest(
-                XED_REG_RAX_EAX, op->op_width);
+                XED_REG_RAX, op->op_width);
 
         uint32_t mem_disp = op->mem_disp;
         uint32_t mem_disp_width = 32; // force disp width to ensure we'll fit
@@ -231,8 +232,8 @@ void translator::add_cmpcov_inst(size_t addr, dasm::opcode* op)
             uint8_t curr_cmp_imm = (op->imm >> (i * 8)) & 0xff;
 
             if (i) {
-                auto new_shr_sz = make_op_2(XED_ICLASS_SHR, sizeof(size_t)*8, 
-                        xed_reg(XED_REG_RAX_EAX),
+                auto new_shr_sz = make_op_2(XED_ICLASS_SHR, 64, 
+                        xed_reg(XED_REG_RAX),
                         xed_imm0(8, 8));
                 ASSERT(new_shr_sz == shr_reg_sz);
             }
@@ -255,7 +256,7 @@ void translator::add_cmpcov_inst(size_t addr, dasm::opcode* op)
             size_t tgt_addr = m_cmpcov_offset + m_cmpcov_buf->addr_remote();
             size_t inst_end = (size_t)m_inst_code->addr_remote() +
                 m_inst_offset + or_sz;
-            uint32_t disp = tgt_addr - inst_end;
+            uint32_t disp = X64_OR_X86(tgt_addr - inst_end, tgt_addr);
 
             auto new_or_sz = make_op_2(XED_ICLASS_OR, 8, 
                     xed_mem_bd(XED_REG_PC_INVALID, xed_disp(disp, 32), 8),
@@ -263,7 +264,7 @@ void translator::add_cmpcov_inst(size_t addr, dasm::opcode* op)
             ASSERT(new_or_sz == or_sz);
         }
 
-        make_op_1(XED_ICLASS_POP, 64, xed_reg(XED_REG_RAX_EAX));
+        make_op_1(XED_ICLASS_POP, 64, xed_reg(XED_REG_RAX));
     }
     else if ((op->first_op_name == XED_OPERAND_MEM0 &&
             op->second_op_name == XED_OPERAND_REG0) || 
@@ -323,11 +324,11 @@ void translator::add_cmpcov_inst(size_t addr, dasm::opcode* op)
         for (uint32_t i = 0; i < loop_len; i++) {
 
             if (i) {
-                auto new_shr_sz = make_op_2(XED_ICLASS_SHR, sizeof(size_t)*8, 
+                auto new_shr_sz = make_op_2(XED_ICLASS_SHR, 64, 
                         xed_reg(prop_reg_largest),
                         xed_imm0(8, 8));
                 ASSERT(new_shr_sz == shr_reg_sz);
-                new_shr_sz = make_op_2(XED_ICLASS_SHR, sizeof(size_t)*8, 
+                new_shr_sz = make_op_2(XED_ICLASS_SHR, 64, 
                         xed_reg(op->reg0_largest),
                         xed_imm0(8, 8));
                 ASSERT(new_shr_sz == shr_reg_sz);
@@ -351,7 +352,7 @@ void translator::add_cmpcov_inst(size_t addr, dasm::opcode* op)
             size_t tgt_addr = m_cmpcov_offset + m_cmpcov_buf->addr_remote();
             size_t inst_end = (size_t)m_inst_code->addr_remote() +
                 m_inst_offset + or_sz;
-            uint32_t disp = tgt_addr - inst_end;
+            uint32_t disp = X64_OR_X86(tgt_addr - inst_end, tgt_addr);
 
             auto new_or_sz = make_op_2(XED_ICLASS_OR, 8, 
                     xed_mem_bd(XED_REG_PC_INVALID, xed_disp(disp, 32), 8),

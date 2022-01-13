@@ -12,6 +12,8 @@ include_directories(src)
 include_directories(${CMAKE_CURRENT_BINARY_DIR}/third_party/obj/wkit/include)
 include_directories(third_party)
 
+add_subdirectory(src/tests)
+
 link_directories(${CMAKE_CURRENT_BINARY_DIR}/third_party/obj/wkit/lib)
 
 add_library(boxer_lib
@@ -31,9 +33,18 @@ add_library(boxer_lib
     src/leaks.cpp
     src/inproc_fuzzer.cpp
     src/inproc_harness.cpp
-    src/tools64.asm
     third_party/xxHash/xxhash.c
     )
+
+if("${CMAKE_SIZEOF_VOID_P}" STREQUAL "4")
+    add_library(asm_tools
+        src/tools32.asm
+        )
+else()
+    add_library(asm_tools
+        src/tools64.asm
+        )
+endif()
 
 add_library(dummy SHARED
     src/dummy_lib.cpp)
@@ -46,6 +57,7 @@ add_executable(boxer
     )
 target_link_libraries(boxer
     boxer_lib
+    asm_tools
     "dbghelp.lib"
     "xed.lib"
     )
@@ -56,6 +68,7 @@ add_executable(boxer_veh
     )
 target_link_libraries(boxer_veh
     boxer_lib
+    asm_tools
     "dbghelp.lib"
     "xed.lib"
     )
@@ -66,6 +79,7 @@ add_executable(acctest
     )
 target_link_libraries(acctest
     boxer_lib
+    asm_tools
     "dbghelp.lib"
     "xed.lib"
     )

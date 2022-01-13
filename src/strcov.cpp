@@ -113,6 +113,7 @@ int strcmpcov::__strcmp(char* str1, char* str2) {
     if (res && !m_inst->m_stopped && m_inst->should_check()) {
         auto s1 = strlen(str1);
         auto s2 = strlen(str2);
+        SAY_INFO("strcmp: %s 0x%x %s 0x%x\n", str1, s1, str2, s2);
         m_inst->add_to_processing((uint8_t*)str1, (uint8_t*)str2, 
                 s1 + 1, s2 + 1);
     }
@@ -131,7 +132,7 @@ int strcmpcov::__stricmp(char* str1, char* str2) {
     return res;
 }
 
-int strcmpcov::__strncmp(char* str1, char* str2, size_t n) {
+int __cdecl strcmpcov::__strncmp(char* str1, char* str2, size_t n) {
     //SAY_INFO("strncmp: %s %s %d\n", str1, str2, n);
     auto res = strncmp(str1, str2, n);
     if (res && !m_inst->m_stopped && m_inst->should_check()) {
