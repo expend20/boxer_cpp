@@ -10,7 +10,8 @@
 // hopefully be valid during the interruption
 const uint8_t* g_sanity_data = 0;
 uint32_t g_sanity_size = 0;
-
+size_t g_sanity_iteration = 0;
+size_t g_sanity_mutation = 0;
 
 DWORD inprocess_fuzzer::handle_veh(_EXCEPTION_POINTERS* ex_info) 
 {
@@ -187,6 +188,8 @@ bool inprocess_fuzzer::cov_check_by_hash(const uint8_t* data, uint32_t size,
         // don't need to clear cmpcov because it's only increasing bits
         
         m_start_ticks = GetTickCount64();
+
+        g_sanity_iteration++;
 
         save_context(m_inst->get_restore_ctx());
         // run the sample
@@ -503,6 +506,7 @@ void inprocess_fuzzer::run()
         }
 
         // get mutation
+        g_sanity_mutation++;
         auto new_sample = m_mutator.get_next_mutation();
 
         //SAY_INFO("sample %p 0x%x\n", &new_sample[0], new_sample.size());

@@ -13,6 +13,13 @@
 #include <map>
 #include <set>
 
+enum CmpType {
+    RegImm,
+    RegReg,
+    MemImm,
+    MemReg,
+};
+
 struct translator_opts {
     bool debug = false;
     bool disasm = false;
@@ -68,6 +75,9 @@ class translator {
         translator_stats* get_stats() { return &m_stats; };
         uint32_t get_cmpcov_offset() { return m_cmpcov_offset; };
         std::vector<cmpcov_info>* get_cmpcov_info() { return &m_cmpcov_info; };
+        uint32_t make_op_2(xed_iclass_enum_t iclass, uint32_t bits, 
+                xed_encoder_operand_t op1, xed_encoder_operand_t op2);
+
 
     private:
         uint8_t* get_inst_ptr();
@@ -98,8 +108,8 @@ class translator {
         uint32_t make_op_1(xed_iclass_enum_t iclass, uint32_t bits, 
                 xed_encoder_operand_t op);
 
-        uint32_t make_op_2(xed_iclass_enum_t iclass, uint32_t bits, 
-                xed_encoder_operand_t op1, xed_encoder_operand_t op2);
+        uint32_t cmp_handle_reg_imm(size_t addr, dasm::opcode* op);
+        uint32_t cmp_create_loop(CmpType ty, size_t addr, dasm::opcode* op);
 
         std::vector<cmpcov_info> m_cmpcov_info;
 

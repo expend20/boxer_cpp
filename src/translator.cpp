@@ -52,6 +52,226 @@ bool translator::is_target_le_8bits(dasm::opcode* op)
     return res;
 }
 
+uint32_t translator::cmp_create_loop(CmpType ty, size_t addr, dasm::opcode* op)
+{
+    uint32_t jnz_sz = 6;
+    uint32_t shr_reg_sz = X64_OR_X86(4, 3);
+    uint32_t loop_len = op->op_width / 8;
+    uint32_t or_sz = 7;
+
+    bool is_reg_eq = op->reg0 == op->reg1; // cmp rax, rax 
+
+    xed_reg_enum_t reg0_largest = op->reg0_largest;
+    xed_reg_enum_t reg1_largest = op->reg1_largest;
+    xed_reg_enum_t reg0_smallest = op->reg0_smallest;
+    xed_reg_enum_t reg1_smallest = op->reg1_smallest;
+
+    // introduce temporary registers
+    if (ty == MemImm) {
+        reg0_largest = XED_REG_RAX;
+        reg0_smallest = XED_REG_AL;
+    }
+    else if (ty == MemReg) {
+        reg0_largest = dasm::opcode::get_reg_except_this_list(
+                &op->reg0_largest, 1);
+        reg0_smallest = 
+            dasm::opcode::get_reg_from_largest(reg0_largest, 8);
+        reg1_largest = op->reg0_largest;
+        reg1_smallest = op->reg0_smallest;
+    }
+
+    // save spoiled registers
+    uint32_t pushed_size = 0;
+    switch (ty) {
+        case RegImm:
+            make_op_1(XED_ICLASS_PUSH, 64, xed_reg(reg0_largest));
+            break;
+
+        case RegReg:
+            make_op_1(XED_ICLASS_PUSH, 64, xed_reg(reg0_largest));
+            if (!is_reg_eq) {
+                make_op_1(XED_ICLASS_PUSH, 64, xed_reg(reg1_largest));
+            }
+            break;
+
+        case MemImm:
+            make_op_1(XED_ICLASS_PUSH, 64, xed_reg(reg0_largest));
+            pushed_size = sizeof(size_t) * 1;
+            break;
+        case MemReg: 
+            ASSERT(op->mem_len0 == op->op_width);
+
+            make_op_1(XED_ICLASS_PUSH, 64, xed_reg(reg0_largest));
+            make_op_1(XED_ICLASS_PUSH, 64, xed_reg(reg1_largest));
+
+            pushed_size = sizeof(size_t) * 2;
+            break;
+    }
+
+    switch (ty) {
+        case MemImm:
+        case MemReg:
+
+            auto reg0 = dasm::opcode::get_reg_from_largest(
+                    reg0_largest, op->op_width);
+
+            uint32_t mem_disp = op->mem_disp;
+            uint32_t mem_disp_width = 32; // force disp width to ensure we'll fit
+            if (op->reg_base == XED_REG_SP) {
+                mem_disp += pushed_size;
+            }
+
+            // just get size in PC case
+            auto inst_offset_bak = m_inst_offset;
+            auto mov_sz = make_op_2(XED_ICLASS_MOV, op->op_width,
+                    xed_reg(reg0), 
+                    xed_mem_bisd(op->reg_base, 
+                        op->reg_index, 
+                        op->scale,
+                        xed_disp(mem_disp, mem_disp_width),
+                        op->op_width));
+
+            // adjust disp & size in PC case
+            if (op->reg_base == XED_REG_RIP ||
+                    op->reg_base == XED_REG_EIP) {
+                m_inst_offset = inst_offset_bak; // restore pointer
+                size_t tgt_addr = addr + op->size_orig + op->mem_disp;
+                size_t inst_end = (size_t)m_inst_code->addr_remote() +
+                    m_inst_offset + mov_sz;
+                mem_disp = tgt_addr - inst_end;
+                mov_sz = make_op_2(XED_ICLASS_MOV, op->op_width,
+                        xed_reg(reg0), 
+                        xed_mem_bisd(op->reg_base, 
+                            op->reg_index, 
+                            op->scale,
+                            xed_disp(mem_disp, 
+                                op->mem_disp_width * 8), 
+                            op->op_width));
+            }
+
+    }
+
+    bool shift_second_reg = false;
+    if ((ty == RegReg && !is_reg_eq) || (ty == MemReg)) {
+        shift_second_reg = true;
+    }
+    // compare each byte
+    for (uint32_t i = 0; i < loop_len; i++) {
+        uint8_t curr_cmp_imm = (op->imm >> (i * 8)) & 0xff;
+
+        if (i) {
+
+            auto new_shr_sz = make_op_2(XED_ICLASS_SHR, 64, 
+                    xed_reg(reg0_largest),
+                    xed_imm0(8, 8));
+            ASSERT(new_shr_sz == shr_reg_sz);
+
+            if (shift_second_reg) {
+                new_shr_sz = make_op_2(XED_ICLASS_SHR, 64, 
+                        xed_reg(reg1_largest),
+                        xed_imm0(8, 8));
+                ASSERT(new_shr_sz == shr_reg_sz);
+            }
+        }
+        // cmp/test reg, imm. Size may vary
+        auto cmp_sz = 0;
+
+        switch (ty) {
+            case RegImm:
+                cmp_sz = make_op_2(op->iclass, 0, 
+                        xed_reg(reg0_smallest), 
+                        xed_imm0(curr_cmp_imm, 8));
+                break;
+            case RegReg:
+                cmp_sz = make_op_2(op->iclass, op->op_width, 
+                        xed_reg(reg0_smallest), 
+                        xed_reg(reg1_smallest));
+                break;
+
+            case MemImm:
+                cmp_sz = make_op_2(op->iclass, op->op_width, 
+                        xed_reg(reg0_smallest), 
+                        xed_imm0(curr_cmp_imm, 8));
+                break;
+            case MemReg:
+                cmp_sz = make_op_2(op->iclass, 8, 
+                        xed_reg(reg0_smallest), 
+                        xed_reg(reg1_smallest));
+                break;
+        }
+
+        uint32_t full_sz = or_sz + shr_reg_sz + cmp_sz + jnz_sz;
+        if (shift_second_reg) {
+            full_sz = or_sz + shr_reg_sz * 2 + cmp_sz + jnz_sz;
+        }
+
+        uint32_t relbr = 0;
+        if (i == loop_len - 1) {
+            relbr = or_sz;
+        } else {
+            relbr = full_sz * (loop_len - (i + 1)) + or_sz;
+        }
+        uint32_t new_jnz_sz = make_op_1(XED_ICLASS_JNZ, 32, 
+                xed_relbr(relbr, 32));
+        ASSERT(new_jnz_sz == jnz_sz);
+
+        size_t tgt_addr = m_cmpcov_offset + m_cmpcov_buf->addr_remote();
+        size_t inst_end = (size_t)m_inst_code->addr_remote() +
+            m_inst_offset + or_sz;
+        uint32_t disp = X64_OR_X86(tgt_addr - inst_end, tgt_addr);
+
+        auto new_or_sz = make_op_2(XED_ICLASS_OR, 8, 
+                xed_mem_bd(XED_REG_PC_INVALID, xed_disp(disp, 32), 8),
+                xed_imm0(1 << i, 8));
+        ASSERT(new_or_sz == or_sz);
+    }
+
+    // restore spoiled registers
+    switch (ty) {
+        case RegImm:
+            make_op_1(XED_ICLASS_POP, 64, xed_reg(reg0_largest));
+            break;
+
+        case RegReg:
+            if (!is_reg_eq) {
+                make_op_1(XED_ICLASS_POP, 64, xed_reg(reg1_largest));
+            }
+            make_op_1(XED_ICLASS_POP, 64, xed_reg(reg0_largest));
+            break;
+
+        case MemImm:
+            make_op_1(XED_ICLASS_POP, 64, xed_reg(reg0_largest));
+            break;
+
+        case MemReg:
+            make_op_1(XED_ICLASS_POP, 64, xed_reg(reg1_largest));
+            make_op_1(XED_ICLASS_POP, 64, xed_reg(reg0_largest));
+            break;
+    }
+
+    return loop_len;
+}
+
+//uint32_t translator::cmp_handle_reg_imm(size_t addr, dasm::opcode* op) 
+//{
+//
+//    // TODO: duplicate
+//    uint8_t all_bits = 0;
+//    //SAY_INFO("loop %d, largets %s, smallest %s\n", loop_len, 
+//    //        xed_reg_enum_t2str(op->reg0_largest),
+//    //        xed_reg_enum_t2str(op->reg0_smallest));
+//
+//    // NOTE: there is no way to access SIL, DIL, BPL and SPL on x86 (it's 
+//    // x64 only), so we need to swap them with al, bl, cl or dl.
+//    auto reg0_lagest = op->reg0_largest;
+//    auto reg0_smallest = op->reg0_smallest;
+//
+//
+//    auto r = cmp_create_loop(addr, op);
+//
+//    return r;
+//}
+
 void translator::add_cmpcov_inst(size_t addr, dasm::opcode* op) 
 {
     // TODO: if add/sub, shouldn't we compare the result of addition/subraction?
@@ -76,195 +296,17 @@ void translator::add_cmpcov_inst(size_t addr, dasm::opcode* op)
     if (op->first_op_name == XED_OPERAND_REG0 &&
             op->second_op_name == XED_OPERAND_IMM0){
         // cmp edx, 0x31333337
-        //uint32_t loop_len = op->imm_width / 8;
-        loop_len = op->op_width / 8;
-        //SAY_INFO("loop %d, largets %s, lowest %s\n", loop_len, 
-        //        xed_reg_enum_t2str(op->reg0_largest),
-        //        xed_reg_enum_t2str(op->reg0_smallest));
-
-        // push reg0
-        make_op_1(XED_ICLASS_PUSH, 64, xed_reg(op->reg0_largest));
-        for (uint32_t i = 0; i < loop_len; i++) {
-            uint8_t curr_cmp_imm = (op->imm >> (i * 8)) & 0xff;
-
-            if (i) {
-                auto new_shr_sz = make_op_2(XED_ICLASS_SHR, 64, 
-                        xed_reg(op->reg0_largest),
-                        xed_imm0(8, 8));
-                ASSERT(new_shr_sz == shr_reg_sz);
-            }
-            // cmp/test reg, imm. Size may vary
-            auto cmp_sz = make_op_2(op->iclass, op->op_width, 
-                    xed_reg(op->reg0_smallest), 
-                    xed_imm0(curr_cmp_imm, 8));
-            
-            uint32_t full_sz = or_sz + shr_reg_sz + cmp_sz + jnz_sz;
-            uint32_t relbr = 0;
-            if (i == loop_len - 1) {
-                relbr = or_sz;
-            } else {
-                relbr = full_sz * (loop_len - (i + 1)) + or_sz;
-            }
-            uint32_t new_jnz_sz = make_op_1(XED_ICLASS_JNZ, 32, 
-                    xed_relbr(relbr, 32));
-            ASSERT(new_jnz_sz == jnz_sz);
-
-            size_t tgt_addr = m_cmpcov_offset + m_cmpcov_buf->addr_remote();
-            size_t inst_end = (size_t)m_inst_code->addr_remote() +
-                m_inst_offset + or_sz;
-            uint32_t disp = X64_OR_X86(tgt_addr - inst_end, tgt_addr);
-
-            auto new_or_sz = make_op_2(XED_ICLASS_OR, 8, 
-                    xed_mem_bd(XED_REG_PC_INVALID, xed_disp(disp, 32), 8),
-                    xed_imm0(1 << i, 8));
-            ASSERT(new_or_sz == or_sz);
-        }
-        // pop reg0
-        make_op_1(XED_ICLASS_POP, 64, xed_reg(op->reg0_largest));
+        loop_len = cmp_create_loop(CmpType::RegImm, addr, op);
     }
     else if (op->first_op_name == XED_OPERAND_REG0 &&
             op->second_op_name == XED_OPERAND_REG1) {
         // cmp rax, rcx
-        //
-        loop_len = op->op_width / 8;
-        
-        bool is_reg_eq = op->reg0 == op->reg1; // cmp rax, rax 
-        // push reg0, reg1
-        make_op_1(XED_ICLASS_PUSH, 64, xed_reg(op->reg0_largest));
-        if (!is_reg_eq)
-            make_op_1(XED_ICLASS_PUSH, 64, xed_reg(op->reg1_largest));
-
-        for (uint32_t i = 0; i < loop_len; i++) {
-
-            if (i) {
-                auto new_shr_sz = make_op_2(XED_ICLASS_SHR, 64, 
-                        xed_reg(op->reg0_largest),
-                        xed_imm0(8, 8));
-                ASSERT(new_shr_sz == shr_reg_sz);
-                if (!is_reg_eq) {
-                    new_shr_sz = make_op_2(XED_ICLASS_SHR, 64, 
-                            xed_reg(op->reg1_largest),
-                            xed_imm0(8, 8));
-                    ASSERT(new_shr_sz == shr_reg_sz);
-                }
-            }
-
-            auto cmp_sz = make_op_2(op->iclass, op->op_width, 
-                    xed_reg(op->reg0_smallest), 
-                    xed_reg(op->reg1_smallest));
-
-            uint32_t full_sz = or_sz + shr_reg_sz * 2 + cmp_sz + jnz_sz;
-            if (is_reg_eq) {
-                full_sz = or_sz + shr_reg_sz * 1 + cmp_sz + jnz_sz;
-            }
-            uint32_t relbr = 0;
-            if (i == loop_len - 1) {
-                relbr = or_sz;
-            } else {
-                relbr = full_sz * (loop_len - (i + 1)) + or_sz;
-            }
-            uint32_t new_jnz_sz = make_op_1(XED_ICLASS_JNZ, 32, 
-                    xed_relbr(relbr, 32));
-            ASSERT(new_jnz_sz == jnz_sz);
-
-            size_t tgt_addr = m_cmpcov_offset + m_cmpcov_buf->addr_remote();
-            size_t inst_end = (size_t)m_inst_code->addr_remote() +
-                m_inst_offset + or_sz;
-            uint32_t disp = X64_OR_X86(tgt_addr - inst_end, tgt_addr);
-
-            auto new_or_sz = make_op_2(XED_ICLASS_OR, 8, 
-                    xed_mem_bd(XED_REG_PC_INVALID, xed_disp(disp, 32), 8),
-                    xed_imm0(1 << i, 8));
-            ASSERT(new_or_sz == or_sz);
-        }
-
-        // pop reg1, reg0
-        make_op_1(XED_ICLASS_POP, 64, xed_reg(op->reg1_largest));
-        if (!is_reg_eq)
-            make_op_1(XED_ICLASS_POP, 64, xed_reg(op->reg0_largest));
-
+        loop_len = cmp_create_loop(CmpType::RegReg, addr, op);
     }
     else if (op->first_op_name == XED_OPERAND_MEM0 &&
             op->second_op_name == XED_OPERAND_IMM0){
         // cmp dword ptr [rbx], 0x46464952
-
-        loop_len = op->op_width / 8;
-
-        make_op_1(XED_ICLASS_PUSH, 64, xed_reg(XED_REG_RAX));
-        auto prop_reg = dasm::opcode::get_reg_from_largest(
-                XED_REG_RAX, op->op_width);
-
-        uint32_t mem_disp = op->mem_disp;
-        uint32_t mem_disp_width = 32; // force disp width to ensure we'll fit
-        if (op->reg_base == XED_REG_SP) {
-            mem_disp += sizeof(size_t);
-        }
-
-        // just get size in PC case
-        auto inst_offset_bak = m_inst_offset;
-        auto mov_sz = make_op_2(XED_ICLASS_MOV, op->op_width,
-                xed_reg(prop_reg), 
-                xed_mem_bisd(op->reg_base, 
-                    op->reg_index, 
-                    op->scale,
-                    xed_disp(mem_disp, mem_disp_width),
-                    op->op_width));
-            
-        // adjust disp & size in PC case
-        if (op->reg_base == XED_REG_RIP ||
-                op->reg_base == XED_REG_EIP) {
-            m_inst_offset = inst_offset_bak; // restore pointer
-            size_t tgt_addr = addr + op->size_orig + op->mem_disp;
-            size_t inst_end = (size_t)m_inst_code->addr_remote() +
-                m_inst_offset + mov_sz;
-            mem_disp = tgt_addr - inst_end;
-            mov_sz = make_op_2(XED_ICLASS_MOV, op->op_width,
-                    xed_reg(prop_reg), 
-                    xed_mem_bisd(op->reg_base, 
-                        op->reg_index, 
-                        op->scale,
-                        xed_disp(mem_disp, 
-                            op->mem_disp_width * 8), 
-                        op->op_width));
-        }
-
-        for (uint32_t i = 0; i < loop_len; i++) {
-            uint8_t curr_cmp_imm = (op->imm >> (i * 8)) & 0xff;
-
-            if (i) {
-                auto new_shr_sz = make_op_2(XED_ICLASS_SHR, 64, 
-                        xed_reg(XED_REG_RAX),
-                        xed_imm0(8, 8));
-                ASSERT(new_shr_sz == shr_reg_sz);
-            }
-            // cmp/test reg, imm. Size may vary
-            auto cmp_sz = make_op_2(op->iclass, op->op_width, 
-                    xed_reg(XED_REG_AL), 
-                    xed_imm0(curr_cmp_imm, 8));
-            
-            uint32_t full_sz = or_sz + shr_reg_sz + cmp_sz + jnz_sz;
-            uint32_t relbr = 0;
-            if (i == loop_len - 1) {
-                relbr = or_sz;
-            } else {
-                relbr = full_sz * (loop_len - (i + 1)) + or_sz;
-            }
-            uint32_t new_jnz_sz = make_op_1(XED_ICLASS_JNZ, 32, 
-                    xed_relbr(relbr, 32));
-            ASSERT(new_jnz_sz == jnz_sz);
-
-            size_t tgt_addr = m_cmpcov_offset + m_cmpcov_buf->addr_remote();
-            size_t inst_end = (size_t)m_inst_code->addr_remote() +
-                m_inst_offset + or_sz;
-            uint32_t disp = X64_OR_X86(tgt_addr - inst_end, tgt_addr);
-
-            auto new_or_sz = make_op_2(XED_ICLASS_OR, 8, 
-                    xed_mem_bd(XED_REG_PC_INVALID, xed_disp(disp, 32), 8),
-                    xed_imm0(1 << i, 8));
-            ASSERT(new_or_sz == or_sz);
-        }
-
-        make_op_1(XED_ICLASS_POP, 64, xed_reg(XED_REG_RAX));
+        loop_len = cmp_create_loop(CmpType::MemImm, addr, op);
     }
     else if ((op->first_op_name == XED_OPERAND_MEM0 &&
             op->second_op_name == XED_OPERAND_REG0) || 
@@ -272,104 +314,16 @@ void translator::add_cmpcov_inst(size_t addr, dasm::opcode* op)
              op->second_op_name == XED_OPERAND_MEM0)){
 
         // cmp qword ptr [rbx], rdi
-        ASSERT(op->mem_len0 == op->op_width);
+        loop_len = cmp_create_loop(CmpType::MemReg, addr, op);
 
-        loop_len = op->op_width / 8;
-        //uint32_t loop_len = op->mem_len0 / 8;
-
-        auto prop_reg_largest = dasm::opcode::get_reg_except_this_list(
-                &op->reg0_largest, 1);
-        auto prop_reg = 
-            dasm::opcode::get_reg_from_largest(prop_reg_largest, op->mem_len0);
-        auto prop_reg_smallest = 
-            dasm::opcode::get_reg_from_largest(prop_reg_largest, 8);
-
-        make_op_1(XED_ICLASS_PUSH, 64, xed_reg(op->reg0_largest));
-        make_op_1(XED_ICLASS_PUSH, 64, xed_reg(prop_reg_largest));
-
-        uint32_t mem_disp = op->mem_disp;
-        uint32_t mem_disp_width = 32; // force disp width to ensure we'll fit
-        if (op->reg_base == XED_REG_SP) {
-            mem_disp += sizeof(size_t) * 2;
-        }
-
-        // just get size in PC case
-        auto inst_offset_bak = m_inst_offset;
-        auto mov_sz = make_op_2(XED_ICLASS_MOV, op->op_width,
-                xed_reg(prop_reg), 
-                xed_mem_bisd(op->reg_base, 
-                    op->reg_index, 
-                    op->scale,
-                    xed_disp(mem_disp, mem_disp_width),
-                    op->op_width));
-            
-        // adjust disp & size in PC case
-        if (op->reg_base == XED_REG_RIP ||
-                op->reg_base == XED_REG_EIP) {
-            m_inst_offset = inst_offset_bak; // restore pointer
-            size_t tgt_addr = addr + op->size_orig + op->mem_disp;
-            size_t inst_end = (size_t)m_inst_code->addr_remote() +
-                m_inst_offset + mov_sz;
-            mem_disp = tgt_addr - inst_end;
-            mov_sz = make_op_2(XED_ICLASS_MOV, op->op_width,
-                    xed_reg(prop_reg), 
-                    xed_mem_bisd(op->reg_base, 
-                        op->reg_index, 
-                        op->scale,
-                        xed_disp(mem_disp, 
-                            op->mem_disp_width * 8), 
-                        op->op_width));
-        }
-
-        for (uint32_t i = 0; i < loop_len; i++) {
-
-            if (i) {
-                auto new_shr_sz = make_op_2(XED_ICLASS_SHR, 64, 
-                        xed_reg(prop_reg_largest),
-                        xed_imm0(8, 8));
-                ASSERT(new_shr_sz == shr_reg_sz);
-                new_shr_sz = make_op_2(XED_ICLASS_SHR, 64, 
-                        xed_reg(op->reg0_largest),
-                        xed_imm0(8, 8));
-                ASSERT(new_shr_sz == shr_reg_sz);
-            }
-            // cmp/test reg, imm. Size may vary
-            auto cmp_sz = make_op_2(op->iclass, 8, 
-                    xed_reg(op->reg0_smallest), 
-                    xed_reg(prop_reg_smallest));
-            
-            uint32_t full_sz = or_sz + shr_reg_sz * 2 + cmp_sz + jnz_sz;
-            uint32_t relbr = 0;
-            if (i == loop_len - 1) {
-                relbr = or_sz;
-            } else {
-                relbr = full_sz * (loop_len - (i + 1)) + or_sz;
-            }
-            uint32_t new_jnz_sz = make_op_1(XED_ICLASS_JNZ, 32, 
-                    xed_relbr(relbr, 32));
-            ASSERT(new_jnz_sz == jnz_sz);
-
-            size_t tgt_addr = m_cmpcov_offset + m_cmpcov_buf->addr_remote();
-            size_t inst_end = (size_t)m_inst_code->addr_remote() +
-                m_inst_offset + or_sz;
-            uint32_t disp = X64_OR_X86(tgt_addr - inst_end, tgt_addr);
-
-            auto new_or_sz = make_op_2(XED_ICLASS_OR, 8, 
-                    xed_mem_bd(XED_REG_PC_INVALID, xed_disp(disp, 32), 8),
-                    xed_imm0(1 << i, 8));
-            ASSERT(new_or_sz == or_sz);
-        }
-
-        make_op_1(XED_ICLASS_POP, 64, xed_reg(prop_reg_largest));
-        make_op_1(XED_ICLASS_POP, 64, xed_reg(op->reg0_largest));
     }
     else {
         SAY_FATAL("Cmp type not covered ^\n"); exit(-1);
     }
+    ASSERT(loop_len);
 
     adjust_stack_red_zone_back();
 
-    ASSERT(loop_len);
     cmpcov_info ci = { (size_t)start_inst_ptr, (size_t)get_inst_ptr(), 
         (1 << loop_len) - 1};
     //SAY_INFO("cmpinfo %x %p %p %x %x\n", m_cmpcov_offset, ci.start, ci.end,
@@ -971,7 +925,6 @@ size_t translator::translate(size_t addr,
         if (m_bbs &&
                 (m_bbs->find(rip + op->size_orig) != m_bbs->end()))
             should_stop = true;
-        //|| op->category == XED_CATEGORY_CALL
 
         if (should_stop) {
             // place new jump to keep code linked
