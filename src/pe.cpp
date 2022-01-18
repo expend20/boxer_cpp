@@ -51,6 +51,8 @@ void pehelper::pe::extract_imports(){
 
     // We assume import is located in .rdata
     auto sect = get_section(".rdata");
+    if (!sect)
+        sect = get_section(".idata");
     ASSERT(sect);
     auto imp = (IMAGE_IMPORT_DESCRIPTOR*)sect->data.get_mem_by_addr(
             m_remote_addr + (size_t)impRemote);
@@ -83,7 +85,7 @@ void pehelper::pe::extract_imports(){
                 imp->FirstThunk + m_remote_addr);
 #endif
 
-        SAY_DEBUG("dumping import from %s:", dllName);
+        SAY_DEBUG("dumping import from %s:\n", dllName);
 
         import_module mod;
         mod.name = dllName;
@@ -100,14 +102,19 @@ void pehelper::pe::extract_imports(){
                 auto firstThunkData = (size_t)firstThunk->u1.Function;
 
                 import_function impFunc;
-                impFunc.name = origFirstThunkData->Name;
-                impFunc.externAddr = (size_t)sect->data.get_tgt_by_local(
-                        (size_t)firstThunk);
+                if (!origFirstThunkData) {
+                    SAY_ERROR("Import by ordinal too %s:%x\n", dllName,
+                            origFirstThunk->u1.Ordinal);
+                }
+                else {
+                    impFunc.name = origFirstThunkData->Name;
+                    impFunc.externAddr = (size_t)sect->data.get_tgt_by_local(
+                            (size_t)firstThunk);
 
-                SAY_DEBUG("%p %s.%s\n", impFunc.externAddr, dllName, 
-                        impFunc.name.c_str());
-                mod.funcs.push_back(impFunc);
-
+                    SAY_DEBUG("%p %s.%s\n", impFunc.externAddr, dllName, 
+                            impFunc.name.c_str());
+                    mod.funcs.push_back(impFunc);
+                }
             } else {
                 SAY_ERROR("Import by ordinal %s:%x\n", dllName,
                         origFirstThunk->u1.Ordinal);
