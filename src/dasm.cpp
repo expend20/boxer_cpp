@@ -42,8 +42,11 @@ xed_reg_enum_t dasm::opcode::get_reg_from_largest(
             SAY_FATAL("Unknown width: %d", width);
             break;
     }
-    for (uint32_t i = 0; i < sizeof(_regs8); i++) {
-        if (_regs64[i] == reg) return target[i];
+    uint32_t i = 0;
+    auto max_i = sizeof(_regs8) / sizeof(_regs8[0]);
+    for (i = 0; i < max_i; i++) {
+        if (_regs64[i] == reg) 
+            return target[i];
     }
     return reg;
 }
