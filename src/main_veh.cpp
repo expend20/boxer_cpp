@@ -10,7 +10,6 @@
 
 int main(int argc, const char** argv)
 {
-    srand(__rdtsc());
     init_logs(argc, argv);
 
     auto ins = instrumenter();
@@ -50,6 +49,12 @@ int main(int argc, const char** argv)
         ins.set_fix_dd_refs();
     }
     SAY_INFO("fix_dd_refs = %d\n", is_fix_dd_refs);
+
+    auto is_deterministic = GetBinaryOption("--deterministic", argc, argv,
+            false);
+    if (is_deterministic)
+        srand(__rdtsc());
+    SAY_INFO("dterministric = %d\n", is_deterministic);
 
     auto is_hashcov = GetBinaryOption("--hashcov", argc, argv, false);
     SAY_INFO("hashcov = %d\n", is_hashcov);
@@ -194,7 +199,7 @@ int main(int argc, const char** argv)
         s += "_timeout";
         timeout_dir = s.c_str();
     }
-    SAY_INFO("Timeout directory = %s\n", crash_dir);
+    SAY_INFO("Timeout directory = %s\n", timeout_dir);
 
     auto is_save_samples = GetBinaryOption(
             "--save_samples", argc, argv, true);
@@ -204,7 +209,10 @@ int main(int argc, const char** argv)
     vehi.register_handler(&ins);
 
     auto lib_harness = LoadLibrary(dll);
-    SAY_FATAL("Can't load dll: %s\n", dll);
+    DisableThreadLibraryCalls(lib_harness);
+    if (!lib_harness)
+        SAY_FATAL("Can't load dll: %s, %s\n", dll, 
+                helper::getLastErrorAsString().c_str());
 
     auto inproc_harn = inprocess_dll_harness((size_t)lib_harness, func, 
             init_func, argc, argv);

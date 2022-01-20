@@ -158,16 +158,19 @@ extern _crash
 
 @FuzzMeNasmSubRegImm@8:
 
+    push esi
+
     cmp edx, 8
     jb .ret
     
-    mov eax, [ecx]
-    sub eax, '1337' ; r32
+    mov esi, [ecx]
+    sub esi, '1337' ; r32
     jnz .ret
 
     call _crash
 
 .ret:
+    pop esi
     ret
 
 @FuzzMeNasmSubRegReg@8:

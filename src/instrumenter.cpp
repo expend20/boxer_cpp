@@ -337,20 +337,8 @@ void instrumenter::translate_all_bbs()
             // Place jump
             auto jump_size = trans->make_jump_from_orig_to_inst(
                     addr, inst_addr);
-            //{// overwrite bytes left
-            //    auto offset_code = addr - code_sect_remote;
-            //    //SAY_INFO("%p [%p:%p]\n", addr, 
-            //    //        addr + jump_size,
-            //    //        addr + jump_size + orig_size - jump_size);
-
-            //    if (orig_size - jump_size) {
-            //        memset((void*)(code_sect_local + offset_code + jump_size),
-            //                0x90, orig_size - jump_size);
-            //    }
-            //    //__debugbreak();
-            //}
+            ASSERT(jump_size == 5);
             m_bbs_info[addr].bytes_taken = jump_size;
-            //SAY_INFO("taken %p %d\n", addr, jump_size);
 
         } 
         else if (orig_size < 5 && orig_size >= 2) {

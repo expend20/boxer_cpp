@@ -56,14 +56,15 @@ xed_reg_enum_t dasm::opcode::get_reg_except_this_list(
         uint32_t reg_buf_count){
     xed_reg_enum_t allowed_reg_w8[] = {
         XED_REG_RAX, XED_REG_RBX, XED_REG_RCX, XED_REG_RDX,
-        XED_REG_RSI, XED_REG_RDI, /*XED_REG_RBP, XED_REG_RSP,*/ 
+        /*XED_REG_RSI, XED_REG_RDI, XED_REG_RBP, XED_REG_RSP,
         XED_REG_R8, XED_REG_R9, XED_REG_R10, XED_REG_R11, XED_REG_R12,
-        XED_REG_R13, XED_REG_R14, XED_REG_R15};
+        XED_REG_R13, XED_REG_R14, XED_REG_R15*/};
 
     ASSERT(reg_buf);
     ASSERT(reg_buf_count);
 
-    for (size_t i = 0; i < sizeof(allowed_reg_w8); i++) {
+    auto max_i = sizeof(allowed_reg_w8) / sizeof(allowed_reg_w8[0]);
+    for (size_t i = 0; i < max_i; i++) {
         bool is_found = false;
         for (size_t j = 0; j < reg_buf_count; j++) {
             if (allowed_reg_w8[i] == reg_buf[j]) {

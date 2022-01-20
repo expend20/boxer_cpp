@@ -20,6 +20,131 @@
 
 #endif
 
+class reg_tool {
+public:
+
+    xed_reg_enum_t first = XED_REG_INVALID;
+    xed_reg_enum_t second = XED_REG_INVALID;
+    xed_reg_enum_t first_s = XED_REG_INVALID;
+    xed_reg_enum_t second_s = XED_REG_INVALID;
+
+    reg_tool(dasm::opcode* op) {
+        init_from_op(op);
+    }
+
+    xed_reg_enum_t allocate_new() {
+        auto r = allocate_new_except(XED_REG_INVALID);
+        m_spoiled_to_orig[r] = XED_REG_INVALID;
+        return r;
+    }
+
+    void set_first(xed_reg_enum_t v) {
+        // check in spoiled first
+        for (auto const& [sp, orig]: m_spoiled_to_orig) {
+            if (orig == v) {
+                first = sp;
+            }
+        }
+        first = v;
+    }
+
+    void set_second(xed_reg_enum_t v) {
+        // check in spoiled first
+        for (auto const& [sp, orig]: m_spoiled_to_orig) {
+            if (orig == v) {
+                second = sp;
+            }
+        }
+        second = v;
+    }
+
+    void update_smallest() {
+        first_s = dasm::opcode::get_reg_from_largest(first, 8);
+        second_s = dasm::opcode::get_reg_from_largest(second, 8);
+    }
+
+    std::vector<xed_reg_enum_t> get_spoiled() {
+        std::vector<xed_reg_enum_t> r;
+        for (auto const& [sp, orig]: m_spoiled_to_orig) {
+            r.push_back(sp);
+        }
+        return std::move(r);
+    }
+
+    std::vector<std::pair<xed_reg_enum_t, xed_reg_enum_t>> get_moved() {
+        std::vector<std::pair<xed_reg_enum_t, xed_reg_enum_t>> r;
+        for (auto const& [sp, orig]: m_spoiled_to_orig) {
+            if (orig != XED_REG_INVALID) {
+                r.push_back(std::make_pair(sp, orig));
+            }
+        }
+        return std::move(r);
+    }
+
+
+private:
+
+    xed_reg_enum_t allocate_new_except(xed_reg_enum_t cur_reg) {
+        // make temp list
+        std::vector<xed_reg_enum_t> new_vec;
+        for (auto const& [sp, orig]: m_spoiled_to_orig) {
+            new_vec.push_back(sp);
+            new_vec.push_back(orig);
+        }
+        new_vec.push_back(cur_reg);
+
+        // req new
+        auto new_largest = dasm::opcode::get_reg_except_this_list(
+                &new_vec[0], new_vec.size());
+        return new_largest;
+    }
+
+
+    void init_from_op(dasm::opcode* op) {
+
+        first = op->reg0_largest;
+        second = op->reg1_largest;
+
+        xed_reg_enum_t largest_regs[] = {first, second};
+        xed_reg_enum_t disallowed_regs[] = {XED_REG_RSI, XED_REG_RDI, 
+            XED_REG_RBP, XED_REG_RSP};
+
+        for (auto cur_reg: largest_regs) {
+            bool matched = false;
+            for (auto disallowed_reg: disallowed_regs) {
+                if (cur_reg == disallowed_reg) {
+                    matched = true;
+                }
+            }
+            if (matched) {
+                auto new_largest = allocate_new_except(cur_reg);
+
+
+                // update state
+                m_spoiled_to_orig[new_largest] = cur_reg;
+
+                if (cur_reg == first) {
+                    first = new_largest;
+                }
+                else if (cur_reg == second) {
+                    second = new_largest;
+                }
+            }
+            else {
+                // just spoil without orig
+                if (cur_reg != XED_REG_RFLAGS &&
+                        cur_reg != XED_REG_INVALID) {
+                    m_spoiled_to_orig[cur_reg] = XED_REG_INVALID;
+                }
+            }
+        }
+    }
+
+private:
+
+    std::map<xed_reg_enum_t, xed_reg_enum_t> m_spoiled_to_orig;
+};
+
 uint32_t translator::make_op_1(xed_iclass_enum_t iclass, uint32_t bits, 
         xed_encoder_operand_t op)
 {
@@ -61,59 +186,45 @@ uint32_t translator::cmp_create_loop(CmpType ty, size_t addr, dasm::opcode* op)
 
     bool is_reg_eq = op->reg0 == op->reg1; // cmp rax, rax 
 
-    xed_reg_enum_t reg0_largest = op->reg0_largest;
-    xed_reg_enum_t reg1_largest = op->reg1_largest;
-    xed_reg_enum_t reg0_smallest = op->reg0_smallest;
-    xed_reg_enum_t reg1_smallest = op->reg1_smallest;
+    //xed_reg_enum_t reg0_largest = op->reg0_largest;
+    //xed_reg_enum_t reg1_largest = op->reg1_largest;
+    //xed_reg_enum_t reg0_smallest = op->reg0_smallest;
+    //xed_reg_enum_t reg1_smallest = op->reg1_smallest;
 
+    // NOTE: there is no way to access SIL, DIL, BPL and SPL on x86 (it's 
+    // x64 only), so we need to swap them with al, bl, cl or dl.
+    auto rt = reg_tool(op);
+
+    SAY_INFO("cmp inst at %p\n", get_inst_ptr());
+    
     // introduce temporary registers
     if (ty == MemImm) {
-        reg0_largest = XED_REG_RAX;
-        reg0_smallest = XED_REG_AL;
+        auto r = rt.allocate_new();
+        rt.set_first(r);
     }
     else if (ty == MemReg) {
-        reg0_largest = dasm::opcode::get_reg_except_this_list(
-                &op->reg0_largest, 1);
-        reg0_smallest = 
-            dasm::opcode::get_reg_from_largest(reg0_largest, 8);
-        reg1_largest = op->reg0_largest;
-        reg1_smallest = op->reg0_smallest;
+        auto r = rt.allocate_new();
+        rt.set_first(r);
+        rt.set_second(op->reg0_largest);
     }
 
-    // save spoiled registers
-    uint32_t pushed_size = 0;
-    switch (ty) {
-        case RegImm:
-            make_op_1(XED_ICLASS_PUSH, 64, xed_reg(reg0_largest));
-            break;
-
-        case RegReg:
-            make_op_1(XED_ICLASS_PUSH, 64, xed_reg(reg0_largest));
-            if (!is_reg_eq) {
-                make_op_1(XED_ICLASS_PUSH, 64, xed_reg(reg1_largest));
-            }
-            break;
-
-        case MemImm:
-            make_op_1(XED_ICLASS_PUSH, 64, xed_reg(reg0_largest));
-            pushed_size = sizeof(size_t) * 1;
-            break;
-        case MemReg: 
-            ASSERT(op->mem_len0 == op->op_width);
-
-            make_op_1(XED_ICLASS_PUSH, 64, xed_reg(reg0_largest));
-            make_op_1(XED_ICLASS_PUSH, 64, xed_reg(reg1_largest));
-
-            pushed_size = sizeof(size_t) * 2;
-            break;
+    // store registers
+    auto spoiled_regs = rt.get_spoiled();
+    for (auto& r: spoiled_regs) {
+        make_op_1(XED_ICLASS_PUSH, 64, xed_reg(r));
     }
+
+    // mov registers, if needed
+    for (auto& [sp, orig]: rt.get_moved()) {
+        make_op_2(XED_ICLASS_MOV, 64, xed_reg(sp), xed_reg(orig));
+    }
+
+    uint32_t pushed_size = spoiled_regs.size() * sizeof(size_t);
+    rt.update_smallest();
 
     switch (ty) {
         case MemImm:
         case MemReg:
-
-            auto reg0 = dasm::opcode::get_reg_from_largest(
-                    reg0_largest, op->op_width);
 
             uint32_t mem_disp = op->mem_disp;
             uint32_t mem_disp_width = 32; // force disp width to ensure we'll fit
@@ -123,8 +234,9 @@ uint32_t translator::cmp_create_loop(CmpType ty, size_t addr, dasm::opcode* op)
 
             // just get size in PC case
             auto inst_offset_bak = m_inst_offset;
+            auto r = dasm::opcode::get_reg_from_largest(rt.first, op->op_width);
             auto mov_sz = make_op_2(XED_ICLASS_MOV, op->op_width,
-                    xed_reg(reg0), 
+                    xed_reg(r), 
                     xed_mem_bisd(op->reg_base, 
                         op->reg_index, 
                         op->scale,
@@ -140,7 +252,7 @@ uint32_t translator::cmp_create_loop(CmpType ty, size_t addr, dasm::opcode* op)
                     m_inst_offset + mov_sz;
                 mem_disp = tgt_addr - inst_end;
                 mov_sz = make_op_2(XED_ICLASS_MOV, op->op_width,
-                        xed_reg(reg0), 
+                        xed_reg(r), 
                         xed_mem_bisd(op->reg_base, 
                             op->reg_index, 
                             op->scale,
@@ -148,7 +260,6 @@ uint32_t translator::cmp_create_loop(CmpType ty, size_t addr, dasm::opcode* op)
                                 op->mem_disp_width * 8), 
                             op->op_width));
             }
-
     }
 
     bool shift_second_reg = false;
@@ -162,13 +273,13 @@ uint32_t translator::cmp_create_loop(CmpType ty, size_t addr, dasm::opcode* op)
         if (i) {
 
             auto new_shr_sz = make_op_2(XED_ICLASS_SHR, 64, 
-                    xed_reg(reg0_largest),
+                    xed_reg(rt.first),
                     xed_imm0(8, 8));
             ASSERT(new_shr_sz == shr_reg_sz);
 
             if (shift_second_reg) {
                 new_shr_sz = make_op_2(XED_ICLASS_SHR, 64, 
-                        xed_reg(reg1_largest),
+                        xed_reg(rt.second),
                         xed_imm0(8, 8));
                 ASSERT(new_shr_sz == shr_reg_sz);
             }
@@ -179,24 +290,20 @@ uint32_t translator::cmp_create_loop(CmpType ty, size_t addr, dasm::opcode* op)
         switch (ty) {
             case RegImm:
                 cmp_sz = make_op_2(op->iclass, 0, 
-                        xed_reg(reg0_smallest), 
+                        xed_reg(rt.first_s), 
                         xed_imm0(curr_cmp_imm, 8));
                 break;
             case RegReg:
+            case MemReg:
                 cmp_sz = make_op_2(op->iclass, op->op_width, 
-                        xed_reg(reg0_smallest), 
-                        xed_reg(reg1_smallest));
+                        xed_reg(rt.first_s), 
+                        xed_reg(rt.second_s));
                 break;
 
             case MemImm:
                 cmp_sz = make_op_2(op->iclass, op->op_width, 
-                        xed_reg(reg0_smallest), 
+                        xed_reg(rt.first_s), 
                         xed_imm0(curr_cmp_imm, 8));
-                break;
-            case MemReg:
-                cmp_sz = make_op_2(op->iclass, 8, 
-                        xed_reg(reg0_smallest), 
-                        xed_reg(reg1_smallest));
                 break;
         }
 
@@ -226,51 +333,13 @@ uint32_t translator::cmp_create_loop(CmpType ty, size_t addr, dasm::opcode* op)
         ASSERT(new_or_sz == or_sz);
     }
 
-    // restore spoiled registers
-    switch (ty) {
-        case RegImm:
-            make_op_1(XED_ICLASS_POP, 64, xed_reg(reg0_largest));
-            break;
-
-        case RegReg:
-            if (!is_reg_eq) {
-                make_op_1(XED_ICLASS_POP, 64, xed_reg(reg1_largest));
-            }
-            make_op_1(XED_ICLASS_POP, 64, xed_reg(reg0_largest));
-            break;
-
-        case MemImm:
-            make_op_1(XED_ICLASS_POP, 64, xed_reg(reg0_largest));
-            break;
-
-        case MemReg:
-            make_op_1(XED_ICLASS_POP, 64, xed_reg(reg1_largest));
-            make_op_1(XED_ICLASS_POP, 64, xed_reg(reg0_largest));
-            break;
+    // restore registers
+    for (auto it = spoiled_regs.rbegin(); it != spoiled_regs.rend(); it++) {
+        make_op_1(XED_ICLASS_POP, 64, xed_reg(*it));
     }
 
     return loop_len;
 }
-
-//uint32_t translator::cmp_handle_reg_imm(size_t addr, dasm::opcode* op) 
-//{
-//
-//    // TODO: duplicate
-//    uint8_t all_bits = 0;
-//    //SAY_INFO("loop %d, largets %s, smallest %s\n", loop_len, 
-//    //        xed_reg_enum_t2str(op->reg0_largest),
-//    //        xed_reg_enum_t2str(op->reg0_smallest));
-//
-//    // NOTE: there is no way to access SIL, DIL, BPL and SPL on x86 (it's 
-//    // x64 only), so we need to swap them with al, bl, cl or dl.
-//    auto reg0_lagest = op->reg0_largest;
-//    auto reg0_smallest = op->reg0_smallest;
-//
-//
-//    auto r = cmp_create_loop(addr, op);
-//
-//    return r;
-//}
 
 void translator::add_cmpcov_inst(size_t addr, dasm::opcode* op) 
 {
@@ -279,18 +348,13 @@ void translator::add_cmpcov_inst(size_t addr, dasm::opcode* op)
     //SAY_INFO("instrumenting %x cmp %p\n", m_cmpcov_offset, addr);
     auto entry_offset = m_inst_offset;
     auto start_inst_ptr = get_inst_ptr();
+    uint32_t loop_len = 0;
 
     // NOTE: operands order does mater, it sould be `cmp [mem], reg` not 
     // `cmp reg, [mem]`
     ASSERT(op->mem_len1 == 0);
 
     adjust_stack_red_zone();
-
-    uint32_t shr_reg_sz = X64_OR_X86(4, 3);
-    uint32_t jnz_sz = 6;
-    uint32_t or_sz = 7;
-    uint8_t all_bits = 0;
-    uint32_t loop_len = 0;
 
     //SAY_INFO("%p\n", get_inst_ptr());
     if (op->first_op_name == XED_OPERAND_REG0 &&
