@@ -10,6 +10,7 @@
 
 int main(int argc, const char** argv)
 {
+    __debugbreak();
     init_logs(argc, argv);
 
     auto ins = instrumenter();

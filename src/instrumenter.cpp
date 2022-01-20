@@ -938,8 +938,9 @@ void instrumenter::adjust_restore_context() {
 #endif
 
         for (uint32_t i = 0; i < 64; i++) {
-            if ( *(uint32_t*)(pc + i) == MARKER_RESTORE_CONTINUE) {
-                m_pc_restore_offset = i + MAGIC_OFFSET_CONTINUE;
+            if ( *(uint8_t*)(pc + i) == 0xe8 &&
+                   *(uint8_t*)(pc + i + 5) == 0x90) {
+                m_pc_restore_offset = i + 5;
                 break;
             }
         }

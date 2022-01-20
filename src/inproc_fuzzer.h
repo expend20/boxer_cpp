@@ -65,6 +65,7 @@ class inprocess_fuzzer: public iveh_handler {
                 crash_info* crash = 0, bool is_timeout = false);
 
         static DWORD WINAPI _thread_ex_thrower(LPVOID p);
+        void call_proc();
 
     private:
         inprocess_dll_harness* m_harness_inproc = 0;
@@ -106,7 +107,7 @@ class inprocess_fuzzer: public iveh_handler {
         ULONGLONG m_print_stats_count = 1;
         ULONGLONG m_prev_execs = 1;
 
-        uint8_t m_stabilize_attempts = 5;
+        uint8_t m_stabilize_attempts = 10;
         std::set<uint32_t> m_unique_offsets;
 };
 

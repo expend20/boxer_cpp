@@ -115,7 +115,7 @@ int main(int argc, const char** argv)
         auto ins = instrumenter();
         if (is_inst_bbs_path) {
             ins.set_bbs_inst();
-            //ins.set_bbs_inst_all();
+            ins.set_bbs_inst_all();
             ins.set_bbs_path(is_inst_bbs_path);
         }
         vehi.register_handler(&ins);

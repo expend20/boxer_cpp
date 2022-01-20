@@ -15,6 +15,7 @@ include_directories(third_party)
 add_subdirectory(src/tests)
 
 link_directories(${CMAKE_CURRENT_BINARY_DIR}/third_party/obj/wkit/lib)
+add_compile_options(-fsanitize=address)
 
 add_library(boxer_lib
     src/say.cpp

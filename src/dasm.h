@@ -87,6 +87,7 @@ namespace dasm {
         static xed_reg_enum_t get_reg_except_this_list(
                 xed_reg_enum_t* reg_buf, // should be largest ones
                 uint32_t reg_buf_count);
+        static xed_reg_enum_t get_largest(xed_reg_enum_t r);
 
     };
 

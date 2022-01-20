@@ -22,6 +22,10 @@ xed_reg_enum_t _regs64[] = {XED_REG_RAX, XED_REG_RBX, XED_REG_RCX, XED_REG_RDX,
     XED_REG_R10, XED_REG_R11, XED_REG_R12, XED_REG_R13, XED_REG_R14,
     XED_REG_R15};
 
+xed_reg_enum_t dasm::opcode::get_largest(xed_reg_enum_t r){
+    return xed_get_largest_enclosing_register(r);
+}
+
 xed_reg_enum_t dasm::opcode::get_reg_from_largest(
         xed_reg_enum_t reg, uint32_t width){
     xed_reg_enum_t* target;

@@ -264,7 +264,7 @@ std::vector<uint8_t> mutator::get_next_mutation()
         if (!newSize)
             newSize = 1;
         size_t cutOffset = rand() % (res.size() - cutSize);
-        memcpy(&res[0], &res[cutOffset], cutSize);
+        memmove(&res[0], &res[cutOffset], cutSize);
         res.resize(newSize);
         break;
     }

@@ -167,7 +167,17 @@ void inprocess_fuzzer::print_stats(bool force)
 }
 
 extern "C" void __fastcall save_context(_CONTEXT* ctx);
+void inprocess_fuzzer::call_proc() {
+    auto r = m_inst->get_restore_ctx();
+    save_context(r);
+    // run the sample
+    m_harness_inproc->call_fuzz_proc((const char*)g_sanity_data, 
+            g_sanity_size);
+    // this is code marker:
+    __nop();
+}
 
+extern uint32_t continue_mark = 0;
 bool inprocess_fuzzer::cov_check_by_hash(const uint8_t* data, uint32_t size,
         bool* is_unstable) 
 {
@@ -177,7 +187,6 @@ bool inprocess_fuzzer::cov_check_by_hash(const uint8_t* data, uint32_t size,
 
     static size_t cached_ret = 0;
     static uint32_t store_mark = 0;
-    static uint32_t continue_mark = 0;
     g_sanity_data = data;
     g_sanity_size = size;
 
@@ -191,12 +200,8 @@ bool inprocess_fuzzer::cov_check_by_hash(const uint8_t* data, uint32_t size,
 
         g_sanity_iteration++;
 
-        save_context(m_inst->get_restore_ctx());
-        // run the sample
-        m_harness_inproc->call_fuzz_proc((const char*)g_sanity_data, 
-                g_sanity_size);
-        continue_mark = MARKER_RESTORE_CONTINUE;
 
+        call_proc();
         m_inst->clear_leaks();
         //if (sanity_data != data) {
         //    SAY_FATAL("Context restoration failed miserably %p != %p\n",
@@ -205,8 +210,7 @@ bool inprocess_fuzzer::cov_check_by_hash(const uint8_t* data, uint32_t size,
 
         if (m_is_timeouted) {
             // just skip these samples
-            m_is_timeouted = false;
-            break;
+            return false;
         }
 
         uint32_t cov_sz = 0;
@@ -316,7 +320,6 @@ void inprocess_fuzzer::run_one_input(const uint8_t* data, uint32_t size,
     
     if (m_is_timeouted) {
         save_sample(data, size, 0, true);
-
         m_is_timeouted = false;
         return;
     }

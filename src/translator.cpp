@@ -86,12 +86,14 @@ private:
 
     xed_reg_enum_t allocate_new_except(xed_reg_enum_t cur_reg) {
         // make temp list
-        std::vector<xed_reg_enum_t> new_vec;
+        //std::vector<xed_reg_enum_t> new_vec;
+        auto new_vec = m_preserved;
         for (auto const& [sp, orig]: m_spoiled_to_orig) {
             new_vec.push_back(sp);
             new_vec.push_back(orig);
         }
         new_vec.push_back(cur_reg);
+        ASSERT(new_vec.size() != m_preserved.size());
 
         // req new
         auto new_largest = dasm::opcode::get_reg_except_this_list(
@@ -101,6 +103,15 @@ private:
 
 
     void init_from_op(dasm::opcode* op) {
+
+        if (op->reg_base != XED_REG_INVALID) {
+            auto r = dasm::opcode::get_largest(op->reg_base);
+            m_preserved.push_back(r);
+        }
+        if ( op->reg_index != XED_REG_INVALID) {
+            auto r = dasm::opcode::get_largest(op->reg_index);
+            m_preserved.push_back(r);
+        }
 
         first = op->reg0_largest;
         second = op->reg1_largest;
@@ -118,7 +129,6 @@ private:
             }
             if (matched) {
                 auto new_largest = allocate_new_except(cur_reg);
-
 
                 // update state
                 m_spoiled_to_orig[new_largest] = cur_reg;
@@ -143,6 +153,7 @@ private:
 private:
 
     std::map<xed_reg_enum_t, xed_reg_enum_t> m_spoiled_to_orig;
+    std::vector<xed_reg_enum_t> m_preserved;
 };
 
 uint32_t translator::make_op_1(xed_iclass_enum_t iclass, uint32_t bits, 
@@ -186,16 +197,9 @@ uint32_t translator::cmp_create_loop(CmpType ty, size_t addr, dasm::opcode* op)
 
     bool is_reg_eq = op->reg0 == op->reg1; // cmp rax, rax 
 
-    //xed_reg_enum_t reg0_largest = op->reg0_largest;
-    //xed_reg_enum_t reg1_largest = op->reg1_largest;
-    //xed_reg_enum_t reg0_smallest = op->reg0_smallest;
-    //xed_reg_enum_t reg1_smallest = op->reg1_smallest;
-
     // NOTE: there is no way to access SIL, DIL, BPL and SPL on x86 (it's 
     // x64 only), so we need to swap them with al, bl, cl or dl.
     auto rt = reg_tool(op);
-
-    SAY_INFO("cmp inst at %p\n", get_inst_ptr());
     
     // introduce temporary registers
     if (ty == MemImm) {
