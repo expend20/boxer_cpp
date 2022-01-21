@@ -90,7 +90,7 @@ void inprocess_fuzzer::process_input_corpus()
     auto in_corpus = helper::files_to_vector(m_input_corpus_path);
     SAY_INFO("Processing input corpus (%d samples)...\n", in_corpus.size());
     for (auto &sample: in_corpus) {
-        run_one_input(&sample[0], sample.size(), true);
+        run_one_input(&sample[0], sample.size(), true, m_nocov_mode);
     }
 
     if (!in_corpus.size()) {
@@ -102,11 +102,12 @@ void inprocess_fuzzer::process_input_corpus()
         for (uint32_t i = 0; i < sample.size(); i++) {
             sample[i] = rand() % 256;
         }
-        run_one_input(&sample[0], sample.size(), true);
+        run_one_input(&sample[0], sample.size(), true, m_nocov_mode);
     }
 
     if (!m_mutator.get_corpus_size()) {
-        SAY_FATAL("No valid input samples\n");
+        SAY_FATAL("No valid input samples, meaning no sample produced any "
+                "coverage, revisit your parameters\n");
     }
 }
 
@@ -200,13 +201,9 @@ bool inprocess_fuzzer::cov_check_by_hash(const uint8_t* data, uint32_t size,
 
         g_sanity_iteration++;
 
-
         call_proc();
+
         m_inst->clear_leaks();
-        //if (sanity_data != data) {
-        //    SAY_FATAL("Context restoration failed miserably %p != %p\n",
-        //            sanity_data, data);
-        //}
 
         if (m_is_timeouted) {
             // just skip these samples
@@ -290,7 +287,7 @@ void inprocess_fuzzer::save_sample(const uint8_t* data, uint32_t size,
 }
 
 void inprocess_fuzzer::run_one_input(const uint8_t* data, uint32_t size,
-        bool save_to_disk) 
+        bool save_to_disk, bool force_add_sample) 
 {
     ASSERT(data);
     ASSERT(size);
@@ -368,7 +365,7 @@ void inprocess_fuzzer::run_one_input(const uint8_t* data, uint32_t size,
         }
     }
 
-    if (should_add_to_corpus) {
+    if (should_add_to_corpus || force_add_sample) {
         m_mutator.add_sample_to_corpus(data, size);
     }
 

@@ -43,6 +43,7 @@ public:
         for (auto const& [sp, orig]: m_spoiled_to_orig) {
             if (orig == v) {
                 first = sp;
+                return;
             }
         }
         first = v;
@@ -53,6 +54,7 @@ public:
         for (auto const& [sp, orig]: m_spoiled_to_orig) {
             if (orig == v) {
                 second = sp;
+                return;
             }
         }
         second = v;
@@ -360,7 +362,6 @@ void translator::add_cmpcov_inst(size_t addr, dasm::opcode* op)
 
     adjust_stack_red_zone();
 
-    //SAY_INFO("%p\n", get_inst_ptr());
     if (op->first_op_name == XED_OPERAND_REG0 &&
             op->second_op_name == XED_OPERAND_IMM0){
         // cmp edx, 0x31333337
@@ -382,6 +383,7 @@ void translator::add_cmpcov_inst(size_t addr, dasm::opcode* op)
              op->second_op_name == XED_OPERAND_MEM0)){
 
         // cmp qword ptr [rbx], rdi
+        //SAY_INFO("%p\n", get_inst_ptr());
         loop_len = cmp_create_loop(CmpType::MemReg, addr, op);
 
     }

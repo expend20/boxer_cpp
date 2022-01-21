@@ -47,11 +47,14 @@ class inprocess_fuzzer: public iveh_handler {
             m_stop_on_uniq_crash_count = v; 
         };
         void set_stop_on_timeout() { m_stop_on_timeout = true; };
+        void set_nocov_mode() { m_nocov_mode = true; };
+
         fuzzer_stats* get_stats() { return &m_stats; };
 
     private:
         void run_one_input(const uint8_t* data, uint32_t size, 
-                bool save_to_disk = true);
+                bool save_to_disk = true,
+                bool force_add_sample = false);
 
         void print_stats(bool force);
         void process_input_corpus();
@@ -86,6 +89,7 @@ class inprocess_fuzzer: public iveh_handler {
         uint32_t m_zero_corp_sample_size = 12 * 1024;
 
         bool m_cmin_mode = false;
+        bool m_nocov_mode = false;
         bool m_is_inccov = false;
         bool m_is_hashcov = false;
         bool m_is_bitcov = false;

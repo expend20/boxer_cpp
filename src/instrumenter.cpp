@@ -98,6 +98,8 @@ void instrumenter::clear_passed_cmpcov_code()
                 (*ci)[i].all_bits && 
                 data[i] == (*ci)[i].all_bits) {
 
+            data[i] = 0;
+
             if (!unlocked) {
                 mod->inst.make_writeable();
                 unlocked = true;
@@ -1016,6 +1018,7 @@ DWORD instrumenter::handle_veh(_EXCEPTION_POINTERS* ex_info) {
 #else 
             if (m_restore_ctx.Eip) {
 #endif
+                adjust_restore_context();
                 // restore previously saved context
                 memcpy(m_ctx, &m_restore_ctx, sizeof(*m_ctx));
                 res = 1;

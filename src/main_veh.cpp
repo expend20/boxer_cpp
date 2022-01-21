@@ -10,7 +10,7 @@
 
 int main(int argc, const char** argv)
 {
-    __debugbreak();
+    //__debugbreak();
     init_logs(argc, argv);
 
     auto ins = instrumenter();
@@ -75,7 +75,7 @@ int main(int argc, const char** argv)
     auto is_strcmpcov = GetBinaryOption( "--strcmp", argc, argv, false);
     SAY_INFO("strcmpcov = %d\n", is_strcmpcov);
 
-    auto is_leaks = GetBinaryOption( "--leaks", argc, argv, true);
+    auto is_leaks = GetBinaryOption( "--leaks", argc, argv, false);
     SAY_INFO("leaks = %d\n", is_leaks);
 
     auto is_inst_debug = GetBinaryOption("--inst_debug", argc, argv, false);
@@ -112,6 +112,9 @@ int main(int argc, const char** argv)
 
     auto is_cmin = GetBinaryOption( "--cmin", argc, argv, false);
     SAY_INFO("cmin = %d\n", is_cmin);
+    
+    auto is_nocov = GetBinaryOption( "--nocov", argc, argv, false);
+    SAY_INFO("nocov = %d\n", is_nocov);
 
     auto stop_at = GetOption("--stop_at", argc, argv);
     if (stop_at) {
@@ -241,8 +244,12 @@ int main(int argc, const char** argv)
         inproc_fuzz.set_output(output_dir);
     if (crash_dir)
         inproc_fuzz.set_crash_dir(crash_dir);
+    if (timeout_dir)
+        inproc_fuzz.set_timeout_dir(timeout_dir);
     if (is_cmin)
         inproc_fuzz.set_cmin_mode();
+    if (is_nocov)
+        inproc_fuzz.set_nocov_mode();
     if (zero_corp_sample_size_val)
         inproc_fuzz.set_zero_corp_sample_size(zero_corp_sample_size_val);
     if (is_inccov)
