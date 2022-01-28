@@ -11,12 +11,18 @@ void mutator::add_sample_to_corpus(const uint8_t* data, uint32_t size)
         return;
     }
 
+    //SAY_INFO("adding sample -> %p, %x\n", data, size);
     std::vector<uint8_t> s;
+    //SAY_INFO("adding sample ::0 %d\n", size);
     s.resize(size);
+    //SAY_INFO("adding sample ::1\n");
     memcpy(&s[0], data, size);
-    m_corpus.push_back(s);
+    //SAY_INFO("adding sample ::2\n");
+    m_corpus.push_back(std::move(s));
 
+    //SAY_INFO("adding sample ::3\n");
     m_mutationStats.insert(std::make_pair(0, m_corpus.size() - 1));
+    //SAY_INFO("adding sample <-\n");
 }
 
 void mutator::add_sample_to_corpus(std::vector<uint8_t> &sample)

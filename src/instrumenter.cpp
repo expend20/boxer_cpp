@@ -101,7 +101,8 @@ void instrumenter::clear_passed_cmpcov_code()
             data[i] = 0;
 
             if (!unlocked) {
-                mod->inst.make_writeable();
+                // FIXME: inst section is RWX for now
+                //mod->inst.make_writeable();
                 unlocked = true;
             }
 
@@ -112,6 +113,7 @@ void instrumenter::clear_passed_cmpcov_code()
             m_stats.cmpcov_cleaned++;
         }
     }
+    // FIXME: inst section is RWX for now
     if (unlocked) mod->inst.restore_prev_protection();
     mod->cmpcov.end();
 }
@@ -309,7 +311,8 @@ void instrumenter::translate_all_bbs()
     pehelper::section* code_sect = m_inst_mods[mod_base].code_sect;
 
     code_sect->data.begin();
-    m_inst_mods[mod_base].inst.begin();
+    // FIXME: inst is RWX for now
+    //m_inst_mods[mod_base].inst.begin();
 
     auto code_sect_local = code_sect->data.addr_loc_raw();
     auto code_sect_remote = code_sect->data.addr_remote();
@@ -380,7 +383,8 @@ void instrumenter::translate_all_bbs()
 
     // Call commit on inst code
     code_sect->data.end();
-    m_inst_mods[mod_base].inst.end();
+    // FIXME: inst is RWX for now
+    m_inst_mods[mod_base].inst.end(); 
 
     //auto r = FlushInstructionCache(
     //        this->get_target_process(),
@@ -497,12 +501,16 @@ void instrumenter::handle_crash(uint32_t code, size_t addr)
 
             m_crash_info.mod_name = mod_name;
             m_crash_info.offset = addr - (size_t)mods[i];
-            SAY_INFO("%s %x %x\n", mod_name, m_crash_info.offset, code);
+            SAY_INFO("Handling the crash: %s %x %x\n", mod_name, 
+                    m_crash_info.offset, code);
             break;
         }
 
         if (i == cb / sizeof(HMODULE)) {
-            SAY_FATAL("Can't locate module %p\n", addr);
+            SAY_ERROR("Can't locate module %p\n", addr);
+
+            m_crash_info.mod_name = "unk";
+            m_crash_info.offset = addr;
         }
     }
     m_crash_info.code = code;
@@ -526,7 +534,8 @@ bool instrumenter::translate_or_redirect(size_t addr)
 
     size_t inst_addr = trans->remote_orig_to_inst_bb(addr);
     if (!inst_addr) { 
-        m_inst_mods[mod_base].inst.begin();
+        // FIXME: it's RWX for now
+        //m_inst_mods[mod_base].inst.begin();
 
         if (m_opts.debug) 
             SAY_DEBUG("Address not found, instrumenting...\n");
@@ -588,7 +597,8 @@ bool instrumenter::translate_or_redirect(size_t addr)
         }
 
         // Call commit on inst code
-        m_inst_mods[mod_base].inst.end();
+        // FIXME: it's RWX for now
+        //m_inst_mods[mod_base].inst.end();
 
         auto r = FlushInstructionCache(
                 get_target_process(),
@@ -707,7 +717,9 @@ void instrumenter::instrument_module(size_t addr, const char* name)
             hproc,
             img_end,
             code_inst_size,
-            PAGE_EXECUTE_READ);
+            PAGE_EXECUTE_READWRITE);
+            // FIXME: ^ inst section is RWX for now
+            //PAGE_EXECUTE_READ);
     ASSERT(code_inst);
     auto mem_inst = mem_tool(hproc, code_inst, code_inst_size);
     mem_inst.read();
@@ -932,7 +944,7 @@ void instrumenter::print_stats()
 
 void instrumenter::adjust_restore_context() {
 
-    if (!m_pc_restore_offset) {
+    if (!m_pc_restore_addr) {
 #ifdef _WIN64
         auto pc = m_restore_ctx.Rip;
 #else
@@ -942,21 +954,23 @@ void instrumenter::adjust_restore_context() {
         for (uint32_t i = 0; i < 64; i++) {
             if ( *(uint8_t*)(pc + i) == 0xe8 &&
                    *(uint8_t*)(pc + i + 5) == 0x90) {
-                m_pc_restore_offset = i + 5;
+                m_pc_restore_addr = pc + i + 5;
                 break;
             }
         }
 
-        if (!m_pc_restore_offset) {
+        if (!m_pc_restore_addr) {
             SAY_FATAL("Can't find magic at %p + 100\n", pc);
         }
-        SAY_INFO("PC set %p -> %p\n", pc, pc + m_pc_restore_offset);
+        SAY_INFO("PC set %p -> %p\n", pc, m_pc_restore_addr);
     }
 
 #ifdef _WIN64
-    m_restore_ctx.Rip += m_pc_restore_offset;
+    SAY_INFO("PC use %p -> %p\n", m_restore_ctx.Rip, m_pc_restore_addr);
+    m_restore_ctx.Rip = m_pc_restore_addr;
 #else
-    m_restore_ctx.Eip += m_pc_restore_offset;
+    SAY_INFO("PC use %p -> %p\n", m_restore_ctx.Eip, m_pc_restore_addr);
+    m_restore_ctx.Eip = m_pc_restore_addr;
 #endif
     m_restore_ctx.ContextFlags = CONTEXT_CONTROL | CONTEXT_INTEGER;
 }
@@ -966,17 +980,20 @@ DWORD instrumenter::handle_veh(_EXCEPTION_POINTERS* ex_info) {
     m_ctx = ex_info->ContextRecord;
     auto res = 0;
 
-    if (m_opts.debug) {
-        SAY_INFO("Instrumentor::handle_veh: %x / %x\n", 
-                ex_info->ExceptionRecord->ExceptionCode,
-                m_stats.veh_callbacks);
-    }
-
 #ifdef _WIN64
     size_t pc = m_ctx->Rip;
 #else
     size_t pc = m_ctx->Eip;
 #endif
+
+    //if (m_opts.debug) {
+    //    SAY_INFO("Instrumentor::handle_veh: %x %x, vehs %x, ctx %x\n", 
+    //            ex_info->ExceptionRecord->ExceptionCode,
+    //            pc,
+    //            m_stats.veh_callbacks,
+    //            m_ctx);
+    //}
+
     bool should_translate_or_redirect = false;
     bool processed = false;
     auto ex_record = ex_info->ExceptionRecord;
@@ -1003,6 +1020,7 @@ DWORD instrumenter::handle_veh(_EXCEPTION_POINTERS* ex_info) {
             break;
         }
 
+#ifdef _WIN64
         // check for c++ exceptions
         if (ex_code == 0xe06d7363 ||
                 // windowscodecs.dll jpeg_error_mgr::error_exit:
@@ -1013,11 +1031,8 @@ DWORD instrumenter::handle_veh(_EXCEPTION_POINTERS* ex_info) {
             //SAY_WARN("C++ exception: .exr %p, at %p\n",
             //        ex_info->ExceptionRecord, 
             //        ex_info->ExceptionRecord->ExceptionAddress);
-#ifdef _WIN64
             if (m_restore_ctx.Rip) {
-#else 
-            if (m_restore_ctx.Eip) {
-#endif
+            //if (m_restore_ctx.Eip) {
                 adjust_restore_context();
                 // restore previously saved context
                 memcpy(m_ctx, &m_restore_ctx, sizeof(*m_ctx));
@@ -1029,6 +1044,7 @@ DWORD instrumenter::handle_veh(_EXCEPTION_POINTERS* ex_info) {
                         "stored\n");
             }
         }
+#endif
 
         // Last resort, probably crashed
         switch (ex_code) {
@@ -1054,11 +1070,13 @@ DWORD instrumenter::handle_veh(_EXCEPTION_POINTERS* ex_info) {
 #else 
                 if (m_restore_ctx.Eip) {
 #endif
+
                     adjust_restore_context();
                     //SAY_INFO("Crash ctx %p, restore ctx %p\n", m_ctx,
                     //        &m_restore_ctx);
                     
                     // restore previously saved context
+                    if (!m_ctx) SAY_FATAL("m_ctx is zero\n");
                     memcpy(m_ctx, &m_restore_ctx, sizeof(*m_ctx));
                 }
                 else { 

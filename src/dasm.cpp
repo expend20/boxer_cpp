@@ -302,7 +302,7 @@ dasm::opcode::opcode(size_t data, size_t addr_arg) {
     }
     op_width       = xed_decoded_inst_get_operand_width(&xedd);
     imm_width      = xed_decoded_inst_get_immediate_width_bits(&xedd);
-    imm            = xed_decoded_inst_get_unsigned_immediate(&xedd);
+    imm            = xed_decoded_inst_get_signed_immediate(&xedd);
 
     /*
        uint32_t opWidthBits = xed_decoded_inst_get_operand_width(xedd);

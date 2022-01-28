@@ -706,7 +706,7 @@ extern "C" __declspec(dllexport) size_t WINAPIV
     }
     __except (EXCEPTION_EXECUTE_HANDLER) {
         printf("in exception execute handler");
-        if (*(size_t *)&data[4] == 0x37333331) {
+        if (*(size_t *)&data[4] == 0x37333332) {
             crash();
         }
     }
@@ -731,7 +731,8 @@ extern "C" __declspec(dllexport) size_t WINAPIV
         DoNothing(3);
     }
 
-    if (*(size_t *)data == 0x3733333137333331) {
+    //printf("The end of the function\n");
+    if (*(size_t *)data == 0x37333331) {
         crash();
     }
     return 1;
@@ -1040,6 +1041,25 @@ extern "C" __declspec(dllexport) void WINAPIV
     }
 
     return;
+}
+
+extern "C" __declspec(dllexport) size_t WINAPIV
+    FuzzMeTestImm(const char *data, size_t len)
+{
+    if (len < 8)
+        return 0;
+
+    size_t r = 0;
+    if (data[0] == (char)0xfe) {
+        if (!(*(uint32_t*)&data[0] & 0x100)) {
+            r++;
+            if (!(*(uint32_t*)&data[0] & 0x10100)) {
+                r++;
+                *(char*)0 = 0;
+            }
+        }
+    }
+    return r;
 }
 
 BOOL WINAPI DllMain(_In_ HINSTANCE hinstDLL, _In_ DWORD fdwReason,

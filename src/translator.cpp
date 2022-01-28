@@ -274,6 +274,7 @@ uint32_t translator::cmp_create_loop(CmpType ty, size_t addr, dasm::opcode* op)
     }
     // compare each byte
     for (uint32_t i = 0; i < loop_len; i++) {
+        // NOTE: signed extension is possible:
         uint8_t curr_cmp_imm = (op->imm >> (i * 8)) & 0xff;
 
         if (i) {
@@ -856,6 +857,8 @@ uint32_t translator::make_jump_from_inst_to_inst(
 // the middle of existing basic block, we will create new one with partial code
 // duplication. We also do not follow any references in advance. 
 // This strategy leads to the instrumentation of only code wich is hit.
+// UPD: if we have bb info from IDA we can instrument all the bbs of the 
+// binary and it will be much faster overall
 
 size_t translator::translate(size_t addr, 
         uint32_t* instrumented_size,
@@ -898,7 +901,9 @@ size_t translator::translate(size_t addr,
                     "%p\n", 
                     offset, local_addr, rip, m_text_sect_remote_addr);
 
-        auto op = m_dasm_cache.get(local_addr, rip);
+        //auto op = m_dasm_cache.get(local_addr, rip);
+        auto o = dasm::opcode::opcode(local_addr, rip);
+        auto op = &o;
 
         if (m_opts.disasm || m_opts.debug)
         {

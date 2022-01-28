@@ -38,7 +38,7 @@ def parseArgs():
                            '--restartTimeout',
                            action='store',
                            type=int,
-                           default=10,
+                           default=60,
                            help='Force restart & cmin in N minutes')
 
     return logParser.parse_args()
@@ -76,48 +76,55 @@ def removeDir(path, nonExistOk = True):
 
 def populateParams(inputDir, scale):
     cmds = []
+    template = "{start} {opt} --in {inp} --out {out} --crash {crash} " \
+         "--timeout_dir {timeout}"
     if scale == 0:
         # test run, only two threads
-        cmds += ["{start} {opt} --in {inp} --out {out} --crash {crash}".format(
+        cmds += [template.format(
             start = args.startSession, 
             opt = type1Params,
             inp = inputDir,
             out = "out\\type1_{}".format(i),
-            crash = crashDir) 
+            crash = crashDir,
+            timeout = timeoutDir) 
             for i in range(0, 2)]
         return cmds
     
     for s in range(0, scale):
-        cmds += ["{start} {opt} --in {inp} --out {out} --crash {crash}".format(
+        cmds += [template.format(
             start = args.startSession, 
             opt = type1Params,
             inp = inputDir,
             out = "out\\type1_{}_{}".format(s, i),
-            crash = crashDir) 
+            crash = crashDir,
+            timeout = timeoutDir) 
             for i in range(0, 2)]
 
-        cmds += ["{start} {opt} --in {inp} --out {out} --crash {crash}".format(
+        cmds += [template.format(
             start = args.startSession, 
             opt = type2Params,
             inp = inputDir,
             out = "out\\type2_{}_{}".format(s, i),
-            crash = crashDir) 
+            crash = crashDir,
+            timeout = timeoutDir) 
             for i in range(0, 1)]
 
-        cmds += ["{start} {opt} --in {inp} --out {out} --crash {crash}".format(
+        cmds += [template.format(
             start = args.startSession, 
             opt = type3Params,
             inp = inputDir,
             out = "out\\type3_{}_{}".format(s, i),
-            crash = crashDir) 
+            crash = crashDir,
+            timeout = timeoutDir) 
             for i in range(0, 1)]
 
-        cmds += ["{start} {opt} --in {inp} --out {out} --crash {crash}".format(
+        cmds += [template.format(
             start = args.startSession, 
             opt = type3Params,
             inp = inputDir,
             out = "out\\type4_{}_{}".format(s, i),
-            crash = crashDir) 
+            crash = crashDir,
+            timeout = timeoutDir) 
             for i in range(0, 1)]
     return cmds
 
@@ -141,11 +148,12 @@ if __name__ == "__main__":
     # 
     # Meanwhile we sould monitor memory consumption, if one instance exceeds 
     # 100%/nThreads quota - restart it
-    type1Params = "--inccov=false"
-    type2Params = "--strcmp"
-    type3Params = "--bitcov=false"
-    type4Params = "--hashcov=true"
+    type1Params = "--bitcov=true  --inccov=false"
+    type2Params = "--bitcov=false --inccov=true --strcmp"
+    type3Params = "--bitcov=false --inccov=true"
+    type4Params = "--bitcov=false --inccov=true --hashcov=true"
     crashDir = "crashes"
+    timeoutDir = "timeouts"
 
     totalMem = psutil.virtual_memory().total
     print("Total mem: {} GB".format(totalMem / (1024 ** 3)))

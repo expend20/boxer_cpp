@@ -10,7 +10,6 @@
 
 int main(int argc, const char** argv)
 {
-    //__debugbreak();
     init_logs(argc, argv);
 
     auto ins = instrumenter();
@@ -157,7 +156,7 @@ int main(int argc, const char** argv)
     if (!dll) {
         dll = "HarnessWicLib.dll";
     }
-    SAY_INFO("Module to instrument: %s\n", dll);
+    SAY_INFO("Target module: %s\n", dll);
 
     auto func = GetOption("--func", argc, argv);
     if (!func) {

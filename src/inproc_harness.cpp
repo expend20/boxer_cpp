@@ -17,7 +17,9 @@ inprocess_dll_harness::inprocess_dll_harness(
         if (!init) SAY_FATAL("Can't find init func: %s\n", init_name);
         init(argc, argv);
 
-        Sleep(1*1000); // FIXME: this is placed for haness which ...
+        SAY_INFO("Sleeping to make harness happy...\n");
+        Sleep(3*1000); // FIXME: this is placed for haness which ...
+        SAY_INFO("Sleeping done\n");
     }
 }
 

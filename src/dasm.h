@@ -37,7 +37,7 @@ namespace dasm {
         uint8_t             mem_ops_num = 0;
         uint32_t            mem_len0 = 0;
         uint32_t            mem_len1 = 0;
-        uint32_t            imm = 0;
+        int32_t             imm = 0;
         uint32_t            imm_width = 0;
         uint32_t            op_width = 0;
         size_t              branch_disp = 0;

@@ -27,7 +27,8 @@ DWORD inprocess_fuzzer::handle_veh(_EXCEPTION_POINTERS* ex_info)
     if (ex_code == TIMEOUT_CHECK) {
 
         if (m_start_ticks && 
-                GetTickCount64() - m_start_ticks > m_timeout) {
+                GetTickCount64() - m_start_ticks > m_timeout &&
+                !m_is_timeouted) {
             // timeout hit
             m_stats.timeouts++;
             m_is_timeouted = true;
@@ -35,11 +36,14 @@ DWORD inprocess_fuzzer::handle_veh(_EXCEPTION_POINTERS* ex_info)
             auto thread = OpenThread(THREAD_ALL_ACCESS, FALSE, m_thread_id);
             ASSERT(thread);
 
+            SAY_INFO("timeout hit %llu, %d\n", m_start_ticks, m_is_timeouted);
             m_inst->adjust_restore_context();
+            SAY_INFO("Timeout 2\n");
             auto ctx = m_inst->get_restore_ctx();
             SAY_INFO("Redirecting on timeout %llu %p\n", m_stats.timeouts, ctx);
             ctx->ContextFlags = CONTEXT_CONTROL | CONTEXT_INTEGER;
             auto r = SetThreadContext(thread, ctx);
+            SAY_INFO("Timeout Context set\n");
             ASSERT(r);
             CloseHandle(thread);
         }
@@ -56,7 +60,7 @@ DWORD WINAPI inprocess_fuzzer::_thread_ex_thrower(LPVOID p)
     // so, so we have interruptions at least each second and check hanged 
     // samples in the exception handler
     while(1) {
-        Sleep(100);
+        Sleep(1000);
         RaiseException(TIMEOUT_CHECK, 0, 0, 0);
     }
 }
@@ -89,7 +93,11 @@ void inprocess_fuzzer::process_input_corpus()
 {
     auto in_corpus = helper::files_to_vector(m_input_corpus_path);
     SAY_INFO("Processing input corpus (%d samples)...\n", in_corpus.size());
+    size_t i = 0;
     for (auto &sample: in_corpus) {
+        if ((in_corpus.size() / 10) && (i++ % (in_corpus.size() / 10) == 0)) {
+            SAY_INFO("%d / %d\r", i, in_corpus.size());
+        }
         run_one_input(&sample[0], sample.size(), true, m_nocov_mode);
     }
 
@@ -115,7 +123,11 @@ void inprocess_fuzzer::process_output_corpus()
 {
     auto out_corpus = helper::files_to_vector(m_output_corpus_path);
     SAY_INFO("Processing output corpus (%d samples)...\n", out_corpus.size());
+    size_t i = 0;
     for (auto &sample: out_corpus) {
+        if ((out_corpus.size() / 10) && (i++ % (out_corpus.size() / 10) == 0)) {
+            SAY_INFO("%d / %d\r", i, out_corpus.size());
+        }
         run_one_input(&sample[0], sample.size(), false);
     }
 }
@@ -150,14 +162,14 @@ void inprocess_fuzzer::print_stats(bool force)
                 "%10llu (%llu) crashes, %10llu timeouts, %10llu total execs, "
                 " %10llu new execs\n"
                 "%10llu stable cov, %10llu unstable cov, %10llu cmpcov bits\n"
-                "%10llu strcmp\n",
+                "%10llu strcmp %10u mutator corp\n",
                 fcps,
                 (double)m_stats.execs / (m_print_stats_count * m_stats_sec_timeout),
                 m_stats.new_bits, m_stats.new_inc,
                 m_stats.crashes, m_stats.unique_crashes, m_stats.timeouts, 
                 m_stats.execs, newExecs,
                 m_stats.stable_cov, m_stats.unstable_cov, m_stats.cmpcov_bits,
-                m_stats.strcmp
+                m_stats.strcmp, m_mutator.get_corpus_size()
                 );
         m_inst->print_stats();
 
@@ -196,12 +208,14 @@ bool inprocess_fuzzer::cov_check_by_hash(const uint8_t* data, uint32_t size,
         // clear coverage
         m_inst->clear_cov();
         // don't need to clear cmpcov because it's only increasing bits
+
+        g_sanity_iteration++;
         
         m_start_ticks = GetTickCount64();
 
-        g_sanity_iteration++;
-
         call_proc();
+
+        m_start_ticks = 0;
 
         m_inst->clear_leaks();
 
@@ -259,6 +273,7 @@ void inprocess_fuzzer::save_sample(const uint8_t* data, uint32_t size,
         }
         snprintf(buf, sizeof(buf), "%s\\%s", m_timeout_dir,
                 hash_str.c_str());
+        SAY_INFO("saving sample %s\n", buf);
     }
     else if (!crash) {
         static bool dir_checked = false;
@@ -314,8 +329,16 @@ void inprocess_fuzzer::run_one_input(const uint8_t* data, uint32_t size,
         save_sample(data, size, ci);
         m_inst->clear_crash_info();
     }
+
+    if (m_nocov_mode && !force_add_sample) {
+        // don't waste time on checks becase we're in nocov mode
+        // this is also useful when we want to fuzz only input samples with 
+        // coverage enabled to measure perf
+        return;
+    }
     
     if (m_is_timeouted) {
+        SAY_INFO("Timeout\n");
         save_sample(data, size, 0, true);
         m_is_timeouted = false;
         return;

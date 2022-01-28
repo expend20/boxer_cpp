@@ -163,6 +163,7 @@ std::vector<uint8_t> readFile(const char *filePath)
     //ASSERT(data);
 
     std::vector<uint8_t> res;
+    if (!fileSize) return res;
     res.resize(fileSize);
     memcpy(&res[0], data, fileSize);
     return res;
@@ -185,6 +186,7 @@ char *readAllocFile(const char *filePath, size_t *fileLen)
         fseek(file, 0, SEEK_END);
         fsize = ftell(file);
         fseek(file, 0, SEEK_SET);
+        if (!fsize) break;
 
         if (fileLen)
             *fileLen = fsize;
