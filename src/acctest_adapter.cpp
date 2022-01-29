@@ -30,43 +30,49 @@ std::map<std::string, uint32_t> g_crash_counts = {
 };
 
 AccTestCase AccTests[] = {
-    {"FuzzMe1", BitCov, Crash},
-    {"FuzzMeTimeout", BitCov, Timeout},
-    {"FuzzMe2_inc", IncCov, Crash},
-    {"FuzzMe3", IncCov | StrcmpCov, Crash},
-    {"FuzzMe4", CmpCov, Crash},
-    {"FuzzMe5", BitCov, Crash},
-    {"FuzzMe6", CmpCov, Crash},
-    {"FuzzMe7", CmpCov, Crash},
-    
-    {"FuzzMeDWORD", CmpCov, Crash},
-    {"FuzzMeStack", BitCov | CmpCov, Crash},
-    {"FuzzMeMyMemcmp", IncCov | CmpCov, Crash},
-    {"FuzzMePatternMatch_idx", IncCov | CmpCov, Crash},
-    
-    {"FuzzMeCmpRegImm", CmpCov, Crash},
-    {"FuzzMeCmpRegReg", CmpCov, Crash},
-    {"FuzzMeCmpMemReg", CmpCov, Crash},
-    {"FuzzMeCmpMemImm", CmpCov, Crash},
-    {"FuzzMeCmpStkReg", CmpCov, Crash},
-    {"FuzzMeCmpRelReg", CmpCov, Crash},
-    {"FuzzMeCmpRegRel", CmpCov, Crash},
-    {"FuzzMeTestRegReg", CmpCov, Crash},
-    
-    {"FuzzStr0", BitCov | StrcmpCov, Crash},
-    {"FuzzStr1", BitCov | StrcmpCov, Crash},
-    {"FuzzStr2", BitCov | StrcmpCov, Crash},
-    {"FuzzStr3", BitCov | StrcmpCov, Crash},
-    {"FuzzMeBigStr", IncCov, Crash}, // grow buf
-    {"FuzzMeNotSoBigStr", IncCov, Crash}, // shrink buf
-    {"FuzzMeAvoid", CmpCov, Crash}, 
-    
-    {"FuzzMeSubRegImm", CmpCov, Crash},
+    {"FuzzMeTestImm", CmpCov, Crash},
+#ifndef _WIN64
+    {"FuzzMeSEH", CmpCov, Crash},
+    //{"FuzzMeCPPEH", CmpCov, Crash},
+#endif
 
-    {"FuzzStr4", BitCov | StrcmpCov, Crash},
-    {"FuzzStr5", BitCov | StrcmpCov, Crash},
-    {"FuzzStr6", BitCov | StrcmpCov, Crash},
-    {"FuzzStr7", BitCov | StrcmpCov, Crash},
+    //{"FuzzMe1", BitCov, Crash},
+    //{"FuzzMeTimeout", BitCov, Timeout},
+    //{"FuzzMe2_inc", IncCov, Crash},
+    //{"FuzzMe3", IncCov | StrcmpCov, Crash},
+    //{"FuzzMe4", CmpCov, Crash},
+    //{"FuzzMe5", BitCov, Crash},
+    //{"FuzzMe6", CmpCov, Crash},
+    //{"FuzzMe7", CmpCov, Crash},
+    //
+    //{"FuzzMeDWORD", CmpCov, Crash},
+    //{"FuzzMeStack", BitCov | CmpCov, Crash},
+    //{"FuzzMeMyMemcmp", IncCov | CmpCov, Crash},
+    //{"FuzzMePatternMatch_idx", IncCov | CmpCov, Crash},
+    //
+    //{"FuzzMeCmpRegImm", CmpCov, Crash},
+    //{"FuzzMeCmpRegReg", CmpCov, Crash},
+    //{"FuzzMeCmpMemReg", CmpCov, Crash},
+    //{"FuzzMeCmpMemImm", CmpCov, Crash},
+    //{"FuzzMeCmpStkReg", CmpCov, Crash},
+    //{"FuzzMeCmpRelReg", CmpCov, Crash},
+    //{"FuzzMeCmpRegRel", CmpCov, Crash},
+    //{"FuzzMeTestRegReg", CmpCov, Crash},
+    //
+    //{"FuzzStr0", BitCov | StrcmpCov, Crash},
+    //{"FuzzStr1", BitCov | StrcmpCov, Crash},
+    //{"FuzzStr2", BitCov | StrcmpCov, Crash},
+    //{"FuzzStr3", BitCov | StrcmpCov, Crash},
+    //{"FuzzMeBigStr", IncCov, Crash}, // grow buf
+    //{"FuzzMeNotSoBigStr", IncCov, Crash}, // shrink buf
+    //{"FuzzMeAvoid", CmpCov, Crash}, 
+    //
+    //{"FuzzMeSubRegImm", CmpCov, Crash},
+
+    //{"FuzzStr4", BitCov | StrcmpCov, Crash},
+    //{"FuzzStr5", BitCov | StrcmpCov, Crash},
+    //{"FuzzStr6", BitCov | StrcmpCov, Crash},
+    //{"FuzzStr7", BitCov | StrcmpCov, Crash},
     
     //{"FuzzMeWithoutSymbolic", IncCov, Crash}, // it's working but takes too much time
     //{"FuzzMeOOBR", BitCov, Crash}, // works only with verifier
@@ -115,7 +121,7 @@ int main(int argc, const char** argv)
         auto ins = instrumenter();
         if (is_inst_bbs_path) {
             ins.set_bbs_inst();
-            ins.set_bbs_inst_all();
+            //ins.set_bbs_inst_all();
             ins.set_bbs_path(is_inst_bbs_path);
         }
         vehi.register_handler(&ins);

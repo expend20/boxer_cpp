@@ -15,7 +15,7 @@
 
 #define PRINTF printf
 #define VSNPRINTF vsnprintf
-#define ABORT abort
+#define ABORT __debugbreak//abort
 
 #endif // DR_BUILD
 

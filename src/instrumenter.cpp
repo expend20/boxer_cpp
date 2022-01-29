@@ -370,6 +370,24 @@ void instrumenter::translate_all_bbs()
                 }
             }
         }
+
+        
+        // NOTE: restoring the orig data, could be a solution
+        // if we decide to skip bbs 
+        if (orig_size < 5 && m_opts.skip_small_bb && 
+                m_inst_mods[mod_base].shadow.size()
+           ) {
+            //SAY_INFO("skipping bb cov at %p...\n", addr);
+            auto shadow_sect = &m_inst_mods[mod_base].shadow;
+            auto offset = addr - code_sect->data.addr_remote();
+            //SAY_INFO("restoring orig: %p %p %x",
+            //        (void*)(sect->data.addr_loc() + offset),
+            //        (void*)(shadow_sect->addr_loc() + offset),
+            //        orig_size);
+            memcpy((void*)(code_sect->data.addr_loc_raw() + offset),
+                    (void*)(shadow_sect->addr_loc_raw() + offset),
+                    orig_size);
+        }
     }
 
     if (!m_opts.show_flow) {
@@ -384,7 +402,7 @@ void instrumenter::translate_all_bbs()
     // Call commit on inst code
     code_sect->data.end();
     // FIXME: inst is RWX for now
-    m_inst_mods[mod_base].inst.end(); 
+    //m_inst_mods[mod_base].inst.end(); 
 
     //auto r = FlushInstructionCache(
     //        this->get_target_process(),
@@ -512,6 +530,17 @@ void instrumenter::handle_crash(uint32_t code, size_t addr)
             m_crash_info.mod_name = "unk";
             m_crash_info.offset = addr;
         }
+
+        //{
+        //    char buf[512];
+        //    snprintf(buf, sizeof(buf), "%s_%x.dump", 
+        //            m_crash_info.mod_name.c_str(),
+        //            code);
+
+        //    SAY_INFO("Writing minidump: %s\n", buf);
+        //    tools::write_minidump(buf, GetCurrentProcess());
+        //    __debugbreak();
+        //}
     }
     m_crash_info.code = code;
 }
@@ -562,11 +591,11 @@ bool instrumenter::translate_or_redirect(size_t addr)
                 //        addr, orig_size, inst_size);
 
                 // NOTE: restoring the orig data, could be a solution
-                // if we decide skip bbs 
+                // if we decide to skip bbs 
                 if (m_opts.skip_small_bb && 
                         m_inst_mods[mod_base].shadow.size()
                    ) {
-                    //SAY_INFO("skipping bb cov at %p...\n", addr);
+                    // SAY_INFO("skipping bb cov at %p...\n", addr);
                     auto shadow_sect = &m_inst_mods[mod_base].shadow;
                     auto offset = addr - code_sect->data.addr_remote();
                     //SAY_INFO("restoring orig: %p %p %x",
@@ -962,14 +991,14 @@ void instrumenter::adjust_restore_context() {
         if (!m_pc_restore_addr) {
             SAY_FATAL("Can't find magic at %p + 100\n", pc);
         }
-        SAY_INFO("PC set %p -> %p\n", pc, m_pc_restore_addr);
+        //SAY_INFO("PC set %p -> %p\n", pc, m_pc_restore_addr);
     }
 
 #ifdef _WIN64
-    SAY_INFO("PC use %p -> %p\n", m_restore_ctx.Rip, m_pc_restore_addr);
+    //SAY_INFO("PC use %p -> %p\n", m_restore_ctx.Rip, m_pc_restore_addr);
     m_restore_ctx.Rip = m_pc_restore_addr;
 #else
-    SAY_INFO("PC use %p -> %p\n", m_restore_ctx.Eip, m_pc_restore_addr);
+    //SAY_INFO("PC use %p -> %p\n", m_restore_ctx.Eip, m_pc_restore_addr);
     m_restore_ctx.Eip = m_pc_restore_addr;
 #endif
     m_restore_ctx.ContextFlags = CONTEXT_CONTROL | CONTEXT_INTEGER;
@@ -1064,7 +1093,9 @@ DWORD instrumenter::handle_veh(_EXCEPTION_POINTERS* ex_info) {
                 break;
             case STATUS_ACCESS_VIOLATION:
 
+                SAY_INFO("av ctx %p\n", m_ctx);
                 handle_crash(ex_code, pc);
+                __debugbreak();
 #ifdef _WIN64
                 if (m_restore_ctx.Rip) {
 #else 

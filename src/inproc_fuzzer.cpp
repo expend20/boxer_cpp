@@ -35,16 +35,28 @@ DWORD inprocess_fuzzer::handle_veh(_EXCEPTION_POINTERS* ex_info)
 
             auto thread = OpenThread(THREAD_ALL_ACCESS, FALSE, m_thread_id);
             ASSERT(thread);
+            auto r = SuspendThread(thread);
+            if (r == (DWORD)-1) {
+                SAY_FATAL("Can't suspend thread on timeout %d, %s\n",
+                        m_thread_id, helper::getLastErrorAsString().c_str());
+            }
 
-            SAY_INFO("timeout hit %llu, %d\n", m_start_ticks, m_is_timeouted);
+            //SAY_INFO("timeout hit %llu\n", m_start_ticks);
             m_inst->adjust_restore_context();
-            SAY_INFO("Timeout 2\n");
+            //SAY_INFO("Timeout 2\n");
             auto ctx = m_inst->get_restore_ctx();
-            SAY_INFO("Redirecting on timeout %llu %p\n", m_stats.timeouts, ctx);
+            //SAY_INFO("Redirecting on timeout %llu ctx: %p\n", 
+            //        m_stats.timeouts, ctx);
             ctx->ContextFlags = CONTEXT_CONTROL | CONTEXT_INTEGER;
-            auto r = SetThreadContext(thread, ctx);
-            SAY_INFO("Timeout Context set\n");
-            ASSERT(r);
+            auto b = SetThreadContext(thread, ctx);
+            ASSERT(b);
+
+            r = ResumeThread(thread);
+            if (r == (DWORD)-1) {
+                SAY_FATAL("Can't suspend thread on timeout %d, %s\n",
+                        m_thread_id, helper::getLastErrorAsString().c_str());
+            }
+            //SAY_INFO("Timeout thread resumed context set\n");
             CloseHandle(thread);
         }
 
@@ -180,7 +192,7 @@ void inprocess_fuzzer::print_stats(bool force)
 }
 
 extern "C" void __fastcall save_context(_CONTEXT* ctx);
-void inprocess_fuzzer::call_proc() {
+void __declspec(noinline) inprocess_fuzzer::call_proc() {
     auto r = m_inst->get_restore_ctx();
     save_context(r);
     // run the sample
@@ -328,6 +340,7 @@ void inprocess_fuzzer::run_one_input(const uint8_t* data, uint32_t size,
 
         save_sample(data, size, ci);
         m_inst->clear_crash_info();
+        __debugbreak();
     }
 
     if (m_nocov_mode && !force_add_sample) {
@@ -338,7 +351,7 @@ void inprocess_fuzzer::run_one_input(const uint8_t* data, uint32_t size,
     }
     
     if (m_is_timeouted) {
-        SAY_INFO("Timeout\n");
+        SAY_INFO("Timeouted sample...\n");
         save_sample(data, size, 0, true);
         m_is_timeouted = false;
         return;

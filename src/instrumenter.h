@@ -169,7 +169,7 @@ class instrumenter: public idebug_handler, public iveh_handler {
         leaks m_leaks;
         crash_info m_crash_info;
 
-        uint32_t m_pc_restore_addr = 0;
+        size_t m_pc_restore_addr = 0;
 
         std::map<size_t, instrumenter_bb_info> m_bbs_info;
 };

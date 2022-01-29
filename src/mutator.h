@@ -15,7 +15,7 @@ class mutator {
         void set_density(size_t v){ m_density = v; };
 
     private:
-        bool m_timeMutations = false;
+        bool m_timeMutations = true;
 
         size_t m_cachedSampleIdx = 0;
         size_t m_cachedIterations = -1;

@@ -334,7 +334,7 @@ uint32_t translator::cmp_create_loop(CmpType ty, size_t addr, dasm::opcode* op)
             m_inst_offset + or_sz;
         uint32_t disp = X64_OR_X86(tgt_addr - inst_end, tgt_addr);
 
-        auto new_or_sz = make_op_2(XED_ICLASS_OR, 8, 
+        auto new_or_sz = make_op_2(XED_ICLASS_OR, 0, 
                 xed_mem_bd(XED_REG_PC_INVALID, xed_disp(disp, 32), 8),
                 xed_imm0(1 << i, 8));
         ASSERT(new_or_sz == or_sz);
@@ -435,7 +435,7 @@ uint8_t* translator::get_inst_ptr()
 
 uint32_t translator::get_inst_bytes_left()
 {
-    return (uint32_t)(m_inst_code->addr_loc_end() - m_inst_offset);
+    return (uint32_t)(m_inst_code->size() - m_inst_offset);
 }
 
 void translator::make_dword_mov_cov_hit()
@@ -901,6 +901,7 @@ size_t translator::translate(size_t addr,
                     "%p\n", 
                     offset, local_addr, rip, m_text_sect_remote_addr);
 
+        // avoid cache for memory optimization
         //auto op = m_dasm_cache.get(local_addr, rip);
         auto o = dasm::opcode::opcode(local_addr, rip);
         auto op = &o;
