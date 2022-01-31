@@ -8,7 +8,7 @@ LONG WINAPI veh_installer::static_handler(_EXCEPTION_POINTERS* ex_info) {
 
     if (!m_inst) return EXCEPTION_CONTINUE_SEARCH;
 
-    EnterCriticalSection(&m_crit_sect);
+    //EnterCriticalSection(&m_crit_sect);
 
     LONG res = EXCEPTION_CONTINUE_SEARCH;
     for (auto &user_handler: m_inst->m_user_handlers) {
@@ -20,7 +20,7 @@ LONG WINAPI veh_installer::static_handler(_EXCEPTION_POINTERS* ex_info) {
         }
     }
 
-    LeaveCriticalSection(&m_crit_sect);
+    //LeaveCriticalSection(&m_crit_sect);
 
     return res;
 }

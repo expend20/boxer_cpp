@@ -536,7 +536,6 @@ void instrumenter::handle_crash(uint32_t code, size_t addr)
         //    snprintf(buf, sizeof(buf), "%s_%x.dump", 
         //            m_crash_info.mod_name.c_str(),
         //            code);
-
         //    SAY_INFO("Writing minidump: %s\n", buf);
         //    tools::write_minidump(buf, GetCurrentProcess());
         //    __debugbreak();
@@ -1095,7 +1094,8 @@ DWORD instrumenter::handle_veh(_EXCEPTION_POINTERS* ex_info) {
 
                 SAY_INFO("av ctx %p\n", m_ctx);
                 handle_crash(ex_code, pc);
-                __debugbreak();
+                Sleep(INFINITE);
+                
 #ifdef _WIN64
                 if (m_restore_ctx.Rip) {
 #else 

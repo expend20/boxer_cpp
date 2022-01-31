@@ -11,14 +11,10 @@ class veh_installer {
     public:
         veh_installer();
         void register_handler(iveh_handler* handler) { 
-            EnterCriticalSection(&m_crit_sect);
             m_user_handlers.insert(handler);
-            LeaveCriticalSection(&m_crit_sect);
         };
         void unregister_handler(iveh_handler* handler) { 
-            EnterCriticalSection(&m_crit_sect);
             m_user_handlers.erase(handler);
-            LeaveCriticalSection(&m_crit_sect);
         };
         void unregister_all() {
             m_user_handlers.clear();

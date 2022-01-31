@@ -19,6 +19,13 @@ struct fuzzer_stats {
     ULONGLONG strcmp = 0;
 };
 
+struct runner_thread_opts {
+    bool is_input_processed = false;
+    bool is_output_processed = false;
+    bool stop_on_timeout = false;
+    size_t stop_on_unique_crash_count = 0;
+};
+
 class inprocess_fuzzer: public iveh_handler {
     public: 
         DWORD handle_veh(_EXCEPTION_POINTERS* ex_info) override;
@@ -52,6 +59,7 @@ class inprocess_fuzzer: public iveh_handler {
         fuzzer_stats* get_stats() { return &m_stats; };
 
     private:
+        void run_session();
         void run_one_input(const uint8_t* data, uint32_t size, 
                 bool save_to_disk = true,
                 bool force_add_sample = false);
@@ -67,7 +75,7 @@ class inprocess_fuzzer: public iveh_handler {
         void save_sample(const uint8_t* data, uint32_t size, 
                 crash_info* crash = 0, bool is_timeout = false);
 
-        static DWORD WINAPI _thread_ex_thrower(LPVOID p);
+        static DWORD WINAPI _runner_thread(LPVOID p);
         void call_proc();
 
     private:
@@ -99,7 +107,7 @@ class inprocess_fuzzer: public iveh_handler {
         uint32_t m_thread_id = 0;
         HANDLE m_thread_ex_thrower = 0;
         ULONGLONG m_start_ticks = 0;
-        ULONGLONG m_timeout = 0;
+        ULONGLONG m_timeout = 5000;
 
         int m_argc = 0;
         const char** m_argv = 0;
@@ -113,6 +121,11 @@ class inprocess_fuzzer: public iveh_handler {
 
         uint8_t m_stabilize_attempts = 100;
         std::set<uint32_t> m_unique_offsets;
+
+        runner_thread_opts m_runner_thread_opts;
+
+        std::vector<std::vector<uint8_t>> m_in_corpus;
+        std::vector<std::vector<uint8_t>> m_out_corpus;
 };
 
 #endif // _INPROC_FUZZ_
