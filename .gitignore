@@ -1,1 +1,4 @@
 build*
+scripts/*.bbs
+scripts/*.bbs.32
+scripts/*.bbs.64
