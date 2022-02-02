@@ -138,8 +138,6 @@ int main(int argc, const char** argv)
         auto inproc_harn = inprocess_dll_harness((size_t)lib, el.name, 0, 0, 0);
         auto inproc_fuzz = inprocess_fuzzer(&inproc_harn, &ins);
 
-        vehi.register_handler(&inproc_fuzz);
-
         inproc_fuzz.set_zero_corp_sample_size(32);
         if (el.result & Timeout) {
             inproc_fuzz.set_timeout(500);
@@ -190,7 +188,6 @@ int main(int argc, const char** argv)
             ins.uninstall_strcmpcov();
         }
 
-        vehi.unregister_handler(&inproc_fuzz);
         vehi.unregister_handler(&ins);
         ins.uninstrument_all();
     }

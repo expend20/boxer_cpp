@@ -26,11 +26,10 @@ struct runner_thread_opts {
     size_t stop_on_unique_crash_count = 0;
 };
 
-class inprocess_fuzzer: public iveh_handler {
+class inprocess_fuzzer {
     public: 
-        DWORD handle_veh(_EXCEPTION_POINTERS* ex_info) override;
         inprocess_fuzzer(inprocess_dll_harness* harness, 
-                instrumenter* inst, uint32_t mutator_density = 0);
+                instrumenter* inst);
         void run();
         bool cov_check_by_hash(const uint8_t* data, uint32_t size, 
                 bool* is_unstable);
@@ -57,6 +56,7 @@ class inprocess_fuzzer: public iveh_handler {
         void set_nocov_mode() { m_nocov_mode = true; };
 
         fuzzer_stats* get_stats() { return &m_stats; };
+        mutator* get_mutator() { return &m_mutator; };
 
     private:
         void run_session();
@@ -67,6 +67,7 @@ class inprocess_fuzzer: public iveh_handler {
         void print_stats(bool force);
         void process_input_corpus();
         void process_output_corpus();
+        void assure_input_samples();
         void restart_if_should();
 
         std::vector<std::vector<uint8_t>>
@@ -77,6 +78,7 @@ class inprocess_fuzzer: public iveh_handler {
 
         static DWORD WINAPI _runner_thread(LPVOID p);
         void call_proc();
+        ULONGLONG get_elapsed_seconds();
 
     private:
         inprocess_dll_harness* m_harness_inproc = 0;
@@ -126,6 +128,8 @@ class inprocess_fuzzer: public iveh_handler {
 
         std::vector<std::vector<uint8_t>> m_in_corpus;
         std::vector<std::vector<uint8_t>> m_out_corpus;
+
+        ULONGLONG m_session_start_time = 0;
 };
 
 #endif // _INPROC_FUZZ_

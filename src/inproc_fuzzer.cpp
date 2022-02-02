@@ -13,59 +13,6 @@ uint32_t g_sanity_size = 0;
 size_t g_sanity_iteration = 0;
 size_t g_sanity_mutation = 0;
 
-DWORD inprocess_fuzzer::handle_veh(_EXCEPTION_POINTERS* ex_info) 
-{
-    if (!m_timeout) { // no timeout set
-        return EXCEPTION_CONTINUE_SEARCH;
-    }
-
-    auto ex_record = ex_info->ExceptionRecord;
-    auto ex_code = ex_record->ExceptionCode;
-
-    auto res = false;
-    // check for imeout on OutputDebugString messages
-    if (ex_code == TIMEOUT_CHECK) {
-
-        if (m_start_ticks && 
-                GetTickCount64() - m_start_ticks > m_timeout &&
-                !m_is_timeouted) {
-            // timeout hit
-            m_stats.timeouts++;
-            m_is_timeouted = true;
-
-            auto thread = OpenThread(THREAD_ALL_ACCESS, FALSE, m_thread_id);
-            ASSERT(thread);
-            auto r = SuspendThread(thread);
-            if (r == (DWORD)-1) {
-                SAY_FATAL("Can't suspend thread on timeout %d, %s\n",
-                        m_thread_id, helper::getLastErrorAsString().c_str());
-            }
-
-            //SAY_INFO("timeout hit %llu\n", m_start_ticks);
-            m_inst->adjust_restore_context();
-            //SAY_INFO("Timeout 2\n");
-            auto ctx = m_inst->get_restore_ctx();
-            //SAY_INFO("Redirecting on timeout %llu ctx: %p\n", 
-            //        m_stats.timeouts, ctx);
-            ctx->ContextFlags = CONTEXT_CONTROL | CONTEXT_INTEGER;
-            auto b = SetThreadContext(thread, ctx);
-            ASSERT(b);
-
-            r = ResumeThread(thread);
-            if (r == (DWORD)-1) {
-                SAY_FATAL("Can't suspend thread on timeout %d, %s\n",
-                        m_thread_id, helper::getLastErrorAsString().c_str());
-            }
-            //SAY_INFO("Timeout thread resumed context set\n");
-            CloseHandle(thread);
-        }
-
-        res = true;
-    }
-
-    return res ? EXCEPTION_CONTINUE_EXECUTION : EXCEPTION_CONTINUE_SEARCH;
-}
-
 void inprocess_fuzzer::set_input(const char* path)
 {
     ASSERT(path);
@@ -90,36 +37,12 @@ void inprocess_fuzzer::set_timeout_dir(const char* path)
     m_timeout_dir = path;
 }
 
-void inprocess_fuzzer::process_input_corpus()
-{
-    // statefull function (it can survive restarts on timeout/crashes)
-    if (!m_in_corpus.size())
-        m_in_corpus = helper::files_to_vector(m_input_corpus_path);
-
-    size_t i = 0;
-    static size_t in_corpus_size = m_in_corpus.size();
-    static size_t in_corpus_size_10th = m_in_corpus.size() / 10;
-
-    SAY_INFO("Processing input corpus (%d samples)...\n", in_corpus_size);
-
-    while (m_in_corpus.size()) {
-        if (in_corpus_size_10th && (i++ % in_corpus_size_10th == 0)) {
-            SAY_INFO("%d / %d\n", i, in_corpus_size);
-        }
-
-        auto sample = std::move(m_in_corpus.back());
-        m_in_corpus.pop_back();
-
-        if (m_in_corpus.size() == 0) 
-            m_runner_thread_opts.is_input_processed = true;
-
-        run_one_input(&sample[0], sample.size(), true, m_nocov_mode);
-    }
+void inprocess_fuzzer::assure_input_samples() {
 
     if (!m_mutator.get_corpus_size()) {
         // no input corpus, put at least something
         std::vector<uint8_t> sample;
-        SAY_INFO("zero comp size %d\n", m_zero_corp_sample_size);
+        SAY_INFO("Fake sample size %d\n", m_zero_corp_sample_size);
         sample.resize(m_zero_corp_sample_size);
 
         for (uint32_t i = 0; i < sample.size(); i++) {
@@ -134,14 +57,63 @@ void inprocess_fuzzer::process_input_corpus()
     }
 }
 
-void inprocess_fuzzer::process_output_corpus()
+ULONGLONG inprocess_fuzzer::get_elapsed_seconds() {
+    return (GetTickCount64() - m_session_start_time) / 1000;
+}
+
+void inprocess_fuzzer::process_input_corpus()
 {
-    if (!m_out_corpus.size())
-        m_out_corpus = helper::files_to_vector(m_output_corpus_path);
+    if (m_runner_thread_opts.is_input_processed) {
+        SAY_INFO("Input is already processed\n");
+        return;
+    }
+
+    // statefull function (it can survive restarts on timeout/crashes)
+    if (!m_in_corpus.size()) {
+        m_in_corpus = helper::files_to_vector(m_input_corpus_path);
+    }
 
     size_t i = 0;
-    static size_t corpus_size = m_out_corpus.size();
-    static size_t corpus_size_10th = m_out_corpus.size() / 10;
+    size_t in_corpus_size = m_in_corpus.size();
+    size_t in_corpus_size_10th = m_in_corpus.size() / 10;
+
+    SAY_INFO("Processing input corpus (%d samples)...\n", in_corpus_size);
+
+    while (m_in_corpus.size()) {
+        if (in_corpus_size_10th && (i++ % in_corpus_size_10th == 0)) {
+            SAY_INFO("%d / %d, elapsed %llu seconds\n", 
+                    i, in_corpus_size, get_elapsed_seconds());
+        }
+
+        auto sample = std::move(m_in_corpus.back());
+        m_in_corpus.pop_back();
+
+        if (m_in_corpus.size() == 0) 
+            m_runner_thread_opts.is_input_processed = true;
+
+        run_one_input(&sample[0], sample.size(), true, m_nocov_mode);
+    }
+
+}
+
+void inprocess_fuzzer::process_output_corpus()
+{
+    if (m_runner_thread_opts.is_output_processed) {
+        SAY_INFO("Output is already processed\n");
+        return;
+    };
+
+    if (!m_out_corpus.size()) {
+        m_out_corpus = helper::files_to_vector(m_output_corpus_path);
+        if (!m_out_corpus.size()) {
+            SAY_INFO("No files were read from output corpus\n");
+            return;
+        }
+    }
+
+    size_t i = 0;
+    size_t corpus_size = m_out_corpus.size();
+    size_t corpus_size_10th = m_out_corpus.size() / 10;
 
     SAY_INFO("Processing output corpus (%d samples)...\n", corpus_size);
     while (m_out_corpus.size()) {
@@ -152,7 +124,8 @@ void inprocess_fuzzer::process_output_corpus()
             m_runner_thread_opts.is_output_processed = true;
 
         if (corpus_size_10th && (i++ % corpus_size_10th == 0)) {
-            SAY_INFO("%d / %d\n", i, corpus_size);
+            SAY_INFO("%d / %d, elapsed %llu seconds\n", i, corpus_size,
+                    get_elapsed_seconds());
         }
         run_one_input(&sample[0], sample.size(), false);
     }
@@ -160,14 +133,11 @@ void inprocess_fuzzer::process_output_corpus()
 
 inprocess_fuzzer::inprocess_fuzzer(
         inprocess_dll_harness* harness, 
-        instrumenter* inst,
-        uint32_t mutator_density) : 
+        instrumenter* inst) : 
     m_harness_inproc(harness), 
     m_inst(inst)
 {
     m_mutator = mutator();
-    if (mutator_density)
-        m_mutator.set_density(mutator_density);
 }
 
 void inprocess_fuzzer::restart_if_should()
@@ -177,6 +147,8 @@ void inprocess_fuzzer::restart_if_should()
     }
 }
 
+#include <cmath>
+
 void inprocess_fuzzer::print_stats(bool force) 
 {
     ULONGLONG new_ticks = GetTickCount64();
@@ -184,14 +156,21 @@ void inprocess_fuzzer::print_stats(bool force)
 
         ULONGLONG newExecs = m_stats.execs - m_prev_execs;
         auto fcps = (double)newExecs / m_stats_sec_timeout;
-        SAY_INFO("%8.2f fcps (%8.2f avg) %10llu new bits %10llu new inc\n"
+        auto t = get_elapsed_seconds();
+        auto hours = t / (60 * 60);
+        auto minutes = (t % (60 * 60)) / 60;
+        auto seconds = t % 60;
+        SAY_INFO("%8.2f fcps (%8.2f avg) %10llu new bits %10llu new inc, "
+                "%8llu:%02llu:%02llu from start\n"
                 "%10llu (%llu) crashes, %10llu timeouts, %10llu total execs, "
                 " %10llu new execs\n"
                 "%10llu stable cov, %10llu unstable cov, %10llu cmpcov bits\n"
                 "%10llu strcmp %10u mutator corp\n",
                 fcps,
-                (double)m_stats.execs / (m_print_stats_count * m_stats_sec_timeout),
+                (double)m_stats.execs / (m_print_stats_count * 
+                    m_stats_sec_timeout),
                 m_stats.new_bits, m_stats.new_inc,
+                hours, minutes, seconds,
                 m_stats.crashes, m_stats.unique_crashes, m_stats.timeouts, 
                 m_stats.execs, newExecs,
                 m_stats.stable_cov, m_stats.unstable_cov, m_stats.cmpcov_bits,
@@ -382,14 +361,13 @@ void inprocess_fuzzer::run_one_input(const uint8_t* data, uint32_t size,
     // thus we can use hash to speed up the process
     if (cmpcov_sz) {
         auto h = cov_tool::get_cov_hash(cmpcov, cmpcov_sz);
-        if (m_cov_tool_cmp.is_new_cov_hash(h)) {
+        else if (m_cov_tool_cmp.is_new_cov_hash(h)) {
             m_stats.cmpcov_bits++;
             should_add_to_corpus = true;
             should_save_to_disk = true;
 
             // clear passed cmp cases
             m_inst->clear_passed_cmpcov_code();
-
         }
     }
 
@@ -540,17 +518,18 @@ void inprocess_fuzzer::run_session()
 
 DWORD WINAPI inprocess_fuzzer::_runner_thread(LPVOID p)
 {
-    SAY_INFO("runner thread spawned\n");
+    SAY_INFO("Runner thread spawned\n");
+
+    CoInitialize(0);
 
     auto _this = (inprocess_fuzzer*)p;
 
     auto opts = &_this->m_runner_thread_opts;
-    if (!opts->is_output_processed) {
-        _this->process_output_corpus();
-    }
-    if (!opts->is_input_processed) {
-        _this->process_input_corpus();
-    }
+
+    _this->process_output_corpus();
+    _this->process_input_corpus();
+
+    _this->assure_input_samples();
 
     if (_this->m_cmin_mode) {
         SAY_INFO("Cmin mode, %d samples saved, exiting...\n", 
@@ -566,6 +545,7 @@ DWORD WINAPI inprocess_fuzzer::_runner_thread(LPVOID p)
 void inprocess_fuzzer::run() 
 {
     HANDLE thread = INVALID_HANDLE_VALUE;
+    m_session_start_time = GetTickCount64();
 
     while(1) {
         // create thrad if not yet created
@@ -626,11 +606,12 @@ void inprocess_fuzzer::run()
         // check for timeout and terminate thread if need
         else if (m_start_ticks && cur_time - m_start_ticks > m_timeout) {
 
-            m_start_ticks = 0;
             SAY_INFO("timeout detected, %llu %llu %llu %llu exiting "
                     "thread...\n",
                     m_start_ticks, cur_time, 
                     cur_time - m_start_ticks, m_timeout);
+            m_start_ticks = 0;
+
             if (!TerminateThread(thread, -1)) {
                 SAY_FATAL("Can't terminate thread, %s\n", 
                         helper::getLastErrorAsString().c_str());

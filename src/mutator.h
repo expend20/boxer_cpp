@@ -13,6 +13,7 @@ class mutator {
         void add_sample_to_corpus(const uint8_t* data, uint32_t size);
         size_t get_corpus_size(){ return m_corpus.size(); };
         void set_density(size_t v){ m_density = v; };
+        void set_timebased_mode() { m_timeMutations = true; };
 
     private:
         bool m_timeMutations = true;

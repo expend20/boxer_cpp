@@ -764,7 +764,7 @@ void instrumenter::instrument_module(size_t addr, const char* name)
     m_inst_mods[addr].cov = mem_cov;
 
     // get metadata buffer
-    size_t meta_buf_size = img_size;
+    size_t meta_buf_size = img_size / 10;
     auto meta_buf = tools::alloc_after_pe_image(hproc,
             cov_buf + cov_buf_size,
             meta_buf_size,
@@ -1095,6 +1095,7 @@ DWORD instrumenter::handle_veh(_EXCEPTION_POINTERS* ex_info) {
                 SAY_INFO("av ctx %p\n", m_ctx);
                 handle_crash(ex_code, pc);
                 Sleep(INFINITE);
+                __debugbreak();
                 
 #ifdef _WIN64
                 if (m_restore_ctx.Rip) {

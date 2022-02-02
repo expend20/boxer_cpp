@@ -141,7 +141,7 @@ int main(int argc, const char** argv)
     }
     SAY_INFO("timeout_v = %d\n", timeout_v);
 
-    uint32_t zero_corp_sample_size_val = 256;
+    uint32_t zero_corp_sample_size_val = 2048;
     auto zero_corp_sample_size = GetOption("--zero_corp_sample_size", 
             argc, argv);
     if (zero_corp_sample_size) {
@@ -155,6 +155,10 @@ int main(int argc, const char** argv)
         mutator_density_val = atoi(mutator_density);
     }
     SAY_INFO("mutator_desity = %d\n", mutator_density_val);
+
+    auto is_mutator_time_based = GetBinaryOption("--mutator_timebased", argc, 
+            argv, true);
+    SAY_INFO("mutator_timebased = %d\n", is_mutator_time_based);
 
     auto dll = GetOption("--dll", argc, argv);
     if (!dll) {
@@ -239,7 +243,13 @@ int main(int argc, const char** argv)
     }
 
     auto inproc_fuzz = inprocess_fuzzer(&inproc_harn, &ins);
-    vehi.register_handler(&inproc_fuzz);
+
+    auto mutator = inproc_fuzz.get_mutator();
+
+    mutator->set_density(mutator_density_val);
+    if (is_mutator_time_based)
+        mutator->set_timebased_mode();
+
     inproc_fuzz.set_argc_argv(argc, argv);
     if (input_dir)
         inproc_fuzz.set_input(input_dir);

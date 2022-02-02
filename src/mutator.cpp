@@ -48,7 +48,8 @@ std::vector<uint8_t> mutator::get_next_mutation()
 
     /*
      * Here we implement "democratic" approach, each sample is mutated equal
-     * amount of times. This is tracked by multimap.
+     * number of times (or equal amount of time if m_timeMutations is set).
+     * This is tracked by multimap.
      */
 
     if (m_timeMutations) {
