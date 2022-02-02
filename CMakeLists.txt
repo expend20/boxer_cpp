@@ -34,6 +34,7 @@ add_library(boxer_lib
     src/leaks.cpp
     src/inproc_fuzzer.cpp
     src/inproc_harness.cpp
+    src/ticker.cpp
     third_party/xxHash/xxhash.c
     )
 
@@ -99,3 +100,29 @@ endif()
 set_property(TARGET program 
     APPEND_STRING PROPERTY LINK_FLAGS " /ENTRY:WinMain"
     )
+
+# GoogleTest section
+set(CMAKE_CXX_STANDARD 11)
+
+include(FetchContent)
+FetchContent_Declare(
+    googletest
+    URL https://github.com/google/googletest/archive/609281088cfefc76f9d0ce82e1ff6c30cc3591e5.zip
+)
+# For Windows: Prevent overriding the parent project's compiler/linker settings
+set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
+FetchContent_MakeAvailable(googletest)
+
+enable_testing()
+
+add_executable(ticker_test
+    src/ticker_test.cpp
+)
+
+target_link_libraries(ticker_test
+    boxer_lib
+    gtest_main
+)
+
+include(GoogleTest)
+gtest_discover_tests(ticker_test)

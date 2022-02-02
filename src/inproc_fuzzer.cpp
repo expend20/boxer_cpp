@@ -361,7 +361,7 @@ void inprocess_fuzzer::run_one_input(const uint8_t* data, uint32_t size,
     // thus we can use hash to speed up the process
     if (cmpcov_sz) {
         auto h = cov_tool::get_cov_hash(cmpcov, cmpcov_sz);
-        else if (m_cov_tool_cmp.is_new_cov_hash(h)) {
+        if (m_cov_tool_cmp.is_new_cov_hash(h)) {
             m_stats.cmpcov_bits++;
             should_add_to_corpus = true;
             should_save_to_disk = true;
@@ -478,10 +478,6 @@ inprocess_fuzzer::try_to_fix_strings(uint8_t* data, uint32_t sz)
 void inprocess_fuzzer::run_session()
 {
     SAY_INFO("Running fuzzing session...\n");
-    //auto new_sample = 
-    //    helper::readFile("z:\\in\\in_cr_new_samples\\w10-valid\\nikon_d1h.nef");
-    //auto new_sample = 
-    //    helper::readFile("c:\\git\\boxer_cpp\\build\\sample1");
     do { 
         if (m_stats.execs % 10 == 0) {
             print_stats(false);
@@ -497,21 +493,12 @@ void inprocess_fuzzer::run_session()
         // run code
         run_one_input(&new_sample[0], new_sample.size());
 
-        // attempt to find and patch strings 
-        //if (m_stats.execs % 1000 == 0) {
-            auto str_samples = try_to_fix_strings(
-                    &new_sample[0], new_sample.size());
-            for (auto &str_sample: str_samples) {
-                run_one_input(&str_sample[0], str_sample.size());
-                m_stats.strcmp++;
-            }
-        //}
-
-        //if (m_stop_on_timeout && m_stats.timeouts) {
-        //    SAY_INFO("Stopping on timeout, last stats:\n");
-        //    print_stats(true);
-        //    break;
-        //}
+        auto str_samples = try_to_fix_strings(
+                &new_sample[0], new_sample.size());
+        for (auto &str_sample: str_samples) {
+            run_one_input(&str_sample[0], str_sample.size());
+            m_stats.strcmp++;
+        }
 
     } while(1);
 }

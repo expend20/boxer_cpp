@@ -11,5 +11,6 @@ def Settings( **kwargs ):
                 '-I', 'third_party',
                 '-I', '',
                 '-I', 'build/third_party/obj/wkit/include',
+                '-I', 'build/_deps/googletest-src/googletest/include'
                 ],
     }   
