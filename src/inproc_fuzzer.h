@@ -11,7 +11,6 @@ struct fuzzer_stats {
     ULONGLONG unique_crashes = 0;
     ULONGLONG crashes = 0;
     ULONGLONG timeouts = 0;
-    ULONGLONG stable_cov = 0;
     ULONGLONG unstable_cov = 0;
     ULONGLONG cmpcov_bits = 0;
     ULONGLONG new_bits = 0;
@@ -89,9 +88,9 @@ class inprocess_fuzzer {
         uint32_t m_stats_sec_timeout = 3;
 
         fuzzer_stats m_stats;
-        cov_tool m_cov_tool_bits;
-        cov_tool m_cov_tool_inc;
-        cov_tool m_cov_tool_cmp;
+        cov_tool m_cov_bits_total;
+        cov_tool m_cov_inc_total;
+        cov_tool m_cov_cmp_total;
 
         const char* m_input_corpus_path = 0;
         const char* m_output_corpus_path = 0;

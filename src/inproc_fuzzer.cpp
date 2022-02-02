@@ -165,7 +165,7 @@ void inprocess_fuzzer::print_stats(bool force)
                 "%8llu:%02llu:%02llu from start\n"
                 "%10llu (%llu) crashes, %10llu timeouts, %10llu total execs, "
                 " %10llu new execs\n"
-                "%10llu stable cov, %10llu unstable cov, %10llu cmpcov bits\n"
+                "%10lu stable cov, %10llu unstable cov, %10llu cmpcov bits\n"
                 "%10llu strcmp %10u mutator corp\n",
                 fcps,
                 (double)m_stats.execs / (m_print_stats_count * 
@@ -174,7 +174,8 @@ void inprocess_fuzzer::print_stats(bool force)
                 hours, minutes, seconds,
                 m_stats.crashes, m_stats.unique_crashes, m_stats.timeouts, 
                 m_stats.execs, newExecs,
-                m_stats.stable_cov, m_stats.unstable_cov, m_stats.cmpcov_bits,
+                m_cov_bits_total.hashes_size(), m_stats.unstable_cov, 
+                m_stats.cmpcov_bits,
                 m_stats.strcmp, m_mutator.get_corpus_size()
                 );
         m_inst->print_stats();
@@ -196,7 +197,6 @@ void __declspec(noinline) inprocess_fuzzer::call_proc() {
     __nop();
 }
 
-extern uint32_t continue_mark = 0;
 bool inprocess_fuzzer::cov_check_by_hash(const uint8_t* data, uint32_t size,
         bool* is_unstable) 
 {
@@ -230,15 +230,14 @@ bool inprocess_fuzzer::cov_check_by_hash(const uint8_t* data, uint32_t size,
         ASSERT(cov && cov_sz);
 
         auto h = cov_tool::get_cov_hash(cov, cov_sz);
-        if (!hashes.size() && !m_cov_tool_bits.is_new_cov_hash(h, false)) {
-            // first iteration, no new cov
+        if (!hashes.size() && !m_cov_bits_total.is_new_cov_hash(h, false)) {
+            // first iteration, no new cov found
             break;
         }
 
         if (hashes.size() && hashes.find(h) != hashes.end()) {
             // we've got new stable hash
-            m_stats.stable_cov++;
-            m_cov_tool_bits.add_hash(h);
+            m_cov_bits_total.add_hash(h);
             res = true;
             break;
         }
@@ -340,13 +339,13 @@ void inprocess_fuzzer::run_one_input(const uint8_t* data, uint32_t size,
             uint8_t* cov = 0;
             cov = m_inst->get_cov(&cov_sz);
             if (m_is_bitcov && 
-                    m_cov_tool_bits.is_new_cov_bits(cov, cov_sz)) {
+                    m_cov_bits_total.is_new_cov_bits(cov, cov_sz)) {
                 m_stats.new_bits++;
                 should_add_to_corpus = true;
                 should_save_to_disk = true;
             }
             if (m_is_inccov &&
-                    m_cov_tool_inc.is_new_greater_byte(cov, cov_sz)) {
+                    m_cov_inc_total.is_new_greater_byte(cov, cov_sz)) {
                 m_stats.new_inc++;
                 should_add_to_corpus = true;
                 should_save_to_disk = true;
@@ -362,7 +361,7 @@ void inprocess_fuzzer::run_one_input(const uint8_t* data, uint32_t size,
     // thus we can use hash to speed up the process
     if (cmpcov_sz) {
         auto h = cov_tool::get_cov_hash(cmpcov, cmpcov_sz);
-        if (m_cov_tool_cmp.is_new_cov_hash(h)) {
+        if (m_cov_cmp_total.is_new_cov_hash(h)) {
             m_stats.cmpcov_bits++;
             should_add_to_corpus = true;
             should_save_to_disk = true;

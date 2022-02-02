@@ -1,20 +1,33 @@
 #include "say.h"
 #include "cov_tool.h"
 
+#define ROUND_TO 16
 // this is needed by std::set<XXH128_hash_t>
 bool operator<(const XXH128_hash_t &x, const XXH128_hash_t &y)
 {
     return std::tie(x.low64, x.high64) < std::tie(y.low64, y.high64);
 }
 
+bool operator==(const XXH128_hash_t &x, const XXH128_hash_t &y)
+{
+    return std::tie(x.low64, x.high64) == std::tie(y.low64, y.high64);
+}
+bool operator!=(const XXH128_hash_t &x, const XXH128_hash_t &y)
+{
+    return std::tie(x.low64, x.high64) != std::tie(y.low64, y.high64);
+}
+
 bool cov_tool::is_new_greater_byte(const uint8_t* cov, uint32_t sz) 
 {
     // if it's first run, shape the buffer
     if (!m_cov_bits.size()) {
-        m_cov_bits.resize(sz % 8 == 0 ? sz : sz + 8); // FIXME:
+        // make size 8 bytes aligned
+        m_cov_bits.resize(sz % ROUND_TO == 0 ? sz : 
+                sz + (ROUND_TO - (sz % ROUND_TO)));
     }
     else {
-        // buffer can be shaped only once
+        // buffer can be shaped only once, but if we dynamically continue 
+        // instrumenting the code this is not the case
         //ASSERT(m_cov_bits.size() == sz);
     }
 
@@ -37,12 +50,15 @@ bool cov_tool::is_new_cov_bits(const uint8_t* cov, uint32_t sz)
 {
     // if it's first run, shape the buffer
     if (!m_cov_bits.size()) {
-        m_cov_bits.resize(sz % 8 == 0 ? sz : sz + 8); // FIXME:
+        m_cov_bits.resize(sz % ROUND_TO == 0 ? sz : 
+                sz + (ROUND_TO - (sz % ROUND_TO)));
     }
     else {
-        // buffer can be shaped only once
+        // buffer can be shaped only once, but if we dynamically continue 
+        // instrumenting the code this is not the case
         //ASSERT(m_cov_bits.size() == sz);
     }
+    ASSERT(sz % sizeof(size_t) == 0);
 
     bool res = false;
     size_t* p1 = (size_t*)&m_cov_bits[0];
@@ -50,7 +66,7 @@ bool cov_tool::is_new_cov_bits(const uint8_t* cov, uint32_t sz)
     for (;
             p2 < (size_t*)((size_t)cov + sz);
             p1++, p2++) {
-        if (p2[0] & (~p1[0])) {
+        if (p2[0] & ~p1[0]) {
             p1[0] |= p2[0];
             res = true;
         }

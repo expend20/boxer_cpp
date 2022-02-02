@@ -16,7 +16,7 @@ class time_ticker: public iticker {
     public:
         time_ticker() { reset(); }
 
-        void set_interval(ULONGLONG i ) override { m_interval = i; };
+        void set_interval(ULONGLONG i) override { m_interval = i; };
         bool tick() override;
         void reset() override { m_time = GetTickCount64(); };
 

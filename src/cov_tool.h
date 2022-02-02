@@ -7,6 +7,8 @@
 #include <xxHash/xxhash.h>
 
 bool operator<(const XXH128_hash_t &x, const XXH128_hash_t &y);
+bool operator==(const XXH128_hash_t &x, const XXH128_hash_t &y);
+bool operator!=(const XXH128_hash_t &x, const XXH128_hash_t &y);
 
 class cov_tool {
     public:
@@ -16,6 +18,7 @@ class cov_tool {
         bool is_new_cov_bits(const uint8_t* cov, uint32_t sz);
         bool is_new_greater_byte(const uint8_t* cov, uint32_t sz);
         void add_hash(XXH128_hash_t h);
+        size_t hashes_size(){ return m_cov_bits_hashes.size(); };
 
     private:
         std::vector<uint8_t> m_cov_bits;

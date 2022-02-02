@@ -115,14 +115,15 @@ FetchContent_MakeAvailable(googletest)
 
 enable_testing()
 
-add_executable(ticker_test
+add_executable(unittests
     src/ticker_unittest.cpp
+    src/cov_unittest.cpp
 )
 
-target_link_libraries(ticker_test
+target_link_libraries(unittests
     boxer_lib
     gtest_main
 )
 
 include(GoogleTest)
-gtest_discover_tests(ticker_test)
+gtest_discover_tests(unittests)
