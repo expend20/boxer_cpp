@@ -242,13 +242,12 @@ int main(int argc, const char** argv)
         ins.install_leaks();
     }
 
-    auto inproc_fuzz = inprocess_fuzzer(&inproc_harn, &ins);
+    auto mo = mutator_options(); // defaul values
+    mo.density = mutator_density_val;
+    mo.mode = is_mutator_time_based ? mutator_mode::time_based : 
+        mutator_mode::num_based;
 
-    auto mutator = inproc_fuzz.get_mutator();
-
-    mutator->set_density(mutator_density_val);
-    if (is_mutator_time_based)
-        mutator->set_timebased_mode();
+    auto inproc_fuzz = inprocess_fuzzer(std::move(mo), &inproc_harn, &ins);
 
     inproc_fuzz.set_argc_argv(argc, argv);
     if (input_dir)

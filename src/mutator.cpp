@@ -4,7 +4,7 @@
 
 void mutator::add_sample_to_corpus(const uint8_t* data, uint32_t size)
 {
-    ASSERT(m_corpus.size() == m_mutationStats.size());
+    ASSERT(m_corpus.size() == m_mutation_stats.size());
 
     if (!size) {
         SAY_ERROR("Can't add sample with zero size\n");
@@ -21,14 +21,14 @@ void mutator::add_sample_to_corpus(const uint8_t* data, uint32_t size)
     m_corpus.push_back(std::move(s));
 
     //SAY_INFO("adding sample ::3\n");
-    m_mutationStats.insert(std::make_pair(0, m_corpus.size() - 1));
+    m_mutation_stats.insert(std::make_pair(0, m_corpus.size() - 1));
     //SAY_INFO("adding sample <-\n");
 }
 
 void mutator::add_sample_to_corpus(std::vector<uint8_t> &sample)
 {
 
-    ASSERT(m_corpus.size() == m_mutationStats.size());
+    ASSERT(m_corpus.size() == m_mutation_stats.size());
 
     if (!sample.size()) {
         SAY_ERROR("Can't add sample with zero size\n");
@@ -37,7 +37,7 @@ void mutator::add_sample_to_corpus(std::vector<uint8_t> &sample)
 
     m_corpus.push_back(sample);
 
-    m_mutationStats.insert(std::make_pair(0, m_corpus.size() - 1));
+    m_mutation_stats.insert(std::make_pair(0, m_corpus.size() - 1));
 }
 
 std::vector<uint8_t> mutator::get_next_mutation() 
@@ -51,98 +51,121 @@ std::vector<uint8_t> mutator::get_next_mutation()
      * number of times (or equal amount of time if m_timeMutations is set).
      * This is tracked by multimap.
      */
+    auto t = m_ticker->tick();
+    if (!m_cached_sample_idx || t) {
+        size_t r = rand() % m_mutation_stats.size();
+        auto first_iter = m_mutation_stats.begin();
+        auto prev_mut_counter = (*first_iter).first;
 
-    if (m_timeMutations) {
-        bool renewIdx = false;
-
-        if (m_cachedIterations == -1) {
-            renewIdx = true;
-        }
-
-        size_t currentTick = 0;
-
-        if (m_cachedIterations % 10 == 0) {
-            currentTick = GetTickCount64();
-            if (currentTick - m_cachedTick > m_secondsAtOnce * 1000) {
-                m_cachedIterations = 0;
-                m_cachedTick = currentTick;
-
-                renewIdx = true;
-            }
-        }
-
-        if (renewIdx) {
-            if (!currentTick) {
-                currentTick = GetTickCount64();
-            }
-
-            m_cachedIterations = 0;
-            /*
-             * Pick random sample with least amount of time and cache it
-             */
-
-            size_t r = rand() % m_mutationStats.size();
-            auto firstIter = m_mutationStats.begin();
-            auto mutationCountPrev = (*firstIter).first;
-
-            if (r) {
-                for (size_t i = 0; i < r - 1; i++) {
-                    // SAY_INFO("L: %d / %d, %d %d\n", i, r, firstIter->first,
-                    //         firstIter->second);
-                    firstIter++;
-                    if (mutationCountPrev < firstIter->first) {
-                        break;
-                    }
+        if (r) {
+            for (size_t i = 0; i < r - 1; i++) {
+                // SAY_INFO("L: %d / %d, %d %d\n", i, r, firstIter->first,
+                //         firstIter->second);
+                first_iter++;
+                if (prev_mut_counter < first_iter->first) {
+                    break;
                 }
             }
-
-            mutationCountPrev = (*firstIter).first;
-            m_cachedSampleIdx = (*firstIter).second;
-            auto secondIter = next(firstIter);
-            m_mutationStats.erase(firstIter, secondIter);
-            m_mutationStats.insert(std::make_pair(
-                mutationCountPrev + m_secondsAtOnce, m_cachedSampleIdx));
-            // SAY_INFO("Fuzzing sample %d / %d\n", m_cachedSampleIdx, r);
         }
-    }
-    else {
 
-        if (m_cachedIterations == m_mutationsAtOnce ||
-            m_cachedIterations == -1) {
-            m_cachedIterations = 0;
-
-            /*
-             * Pick random sample with least amount of time and cache it
-             */
-
-            auto firstIter = m_mutationStats.begin();
-            auto mutationCountPrev = (*firstIter).first;
-
-            size_t r = rand() % m_mutationStats.size();
-            // if (r) {
-            //    for (size_t i = 0; i < r - 1; i++) {
-            //        // SAY_INFO("L: %d / %d, %d %d\n", i, r, firstIter->first,
-            //        //        firstIter->second);
-            //        firstIter++
-            //        if (mutationCountPrev < firstIter->first) {
-            //            break;
-            //        }
-            //    }
-            //}
-
-            mutationCountPrev = (*firstIter).first;
-            m_cachedSampleIdx = (*firstIter).second;
-            auto secondIter = next(firstIter);
-            m_mutationStats.erase(firstIter, secondIter);
-            m_mutationStats.insert(std::make_pair(
-                mutationCountPrev + m_mutationsAtOnce, m_cachedSampleIdx));
-            // SAY_INFO("Fuzzing sample %d / %d\n", m_cachedSampleIdx, r);
-        }
+        prev_mut_counter = (*first_iter).first;
+        m_cached_sample_idx = (*first_iter).second;
+        auto second_iter = next(first_iter);
+        m_mutation_stats.erase(first_iter, second_iter);
+        m_mutation_stats.insert(
+                std::make_pair(prev_mut_counter + m_opts.mutation_interval, 
+                    m_cached_sample_idx));
     }
 
-    m_cachedIterations++;
+    //if (m_timeMutations) {
+    //    bool renewIdx = false;
 
-    auto res_ptr = &m_corpus[m_cachedSampleIdx];
+    //    if (m_cachedIterations == -1) {
+    //        renewIdx = true;
+    //    }
+
+    //    size_t currentTick = 0;
+
+    //    if (m_cachedIterations % 10 == 0) {
+    //        currentTick = GetTickCount64();
+    //        if (currentTick - m_cachedTick > m_secondsAtOnce * 1000) {
+    //            m_cachedIterations = 0;
+    //            m_cachedTick = currentTick;
+
+    //            renewIdx = true;
+    //        }
+    //    }
+
+    //    if (renewIdx) {
+    //        if (!currentTick) {
+    //            currentTick = GetTickCount64();
+    //        }
+
+    //        m_cachedIterations = 0;
+    //        /*
+    //         * Pick random sample with least amount of time and cache it
+    //         */
+
+    //        size_t r = rand() % m_mutationStats.size();
+    //        auto firstIter = m_mutationStats.begin();
+    //        auto mutationCountPrev = (*firstIter).first;
+
+    //        if (r) {
+    //            for (size_t i = 0; i < r - 1; i++) {
+    //                // SAY_INFO("L: %d / %d, %d %d\n", i, r, firstIter->first,
+    //                //         firstIter->second);
+    //                firstIter++;
+    //                if (mutationCountPrev < firstIter->first) {
+    //                    break;
+    //                }
+    //            }
+    //        }
+
+    //        mutationCountPrev = (*firstIter).first;
+    //        m_cachedSampleIdx = (*firstIter).second;
+    //        auto secondIter = next(firstIter);
+    //        m_mutationStats.erase(firstIter, secondIter);
+    //        m_mutationStats.insert(std::make_pair(
+    //            mutationCountPrev + m_secondsAtOnce, m_cachedSampleIdx));
+    //        // SAY_INFO("Fuzzing sample %d / %d\n", m_cachedSampleIdx, r);
+    //    }
+    //}
+    //else {
+
+    //    if (m_cachedIterations == m_mutationsAtOnce ||
+    //        m_cachedIterations == -1) {
+    //        m_cachedIterations = 0;
+
+    //        /*
+    //         * Pick random sample with least amount of time and cache it
+    //         */
+
+    //        auto firstIter = m_mutationStats.begin();
+    //        auto mutationCountPrev = (*firstIter).first;
+
+    //        size_t r = rand() % m_mutationStats.size();
+    //        // if (r) {
+    //        //    for (size_t i = 0; i < r - 1; i++) {
+    //        //        // SAY_INFO("L: %d / %d, %d %d\n", i, r, firstIter->first,
+    //        //        //        firstIter->second);
+    //        //        firstIter++
+    //        //        if (mutationCountPrev < firstIter->first) {
+    //        //            break;
+    //        //        }
+    //        //    }
+    //        //}
+
+    //        mutationCountPrev = (*firstIter).first;
+    //        m_cachedSampleIdx = (*firstIter).second;
+    //        auto secondIter = next(firstIter);
+    //        m_mutationStats.erase(firstIter, secondIter);
+    //        m_mutationStats.insert(std::make_pair(
+    //            mutationCountPrev + m_mutationsAtOnce, m_cachedSampleIdx));
+    //        // SAY_INFO("Fuzzing sample %d / %d\n", m_cachedSampleIdx, r);
+    //    }
+    //}
+
+    auto res_ptr = &m_corpus[m_cached_sample_idx];
     std::vector<uint8_t> res;
     res.resize(res_ptr->size());
     //SAY_INFO("cached sample idx %d(%d), %p %x\n", m_cachedSampleIdx,
@@ -170,8 +193,8 @@ std::vector<uint8_t> mutator::get_next_mutation()
         growSize = rand() % (res.size() / 2); // only for 50% max
         cutSize = rand() % (res.size() / 2);
 
-        // Can't grow more than 20k
-        if (res.size() > m_maxSampleSize && strategy == 8) {
+        // Can't grow more than a limit
+        if (res.size() > m_opts.max_sample_size && strategy == 8) {
             strategy = 0;
         }
     }
@@ -187,7 +210,7 @@ std::vector<uint8_t> mutator::get_next_mutation()
         /*
          * Byte random patching
          */
-        count = res.size() / m_density;
+        count = res.size() / m_opts.density;
         if (!count)
             count++;
 
@@ -206,7 +229,7 @@ std::vector<uint8_t> mutator::get_next_mutation()
         /*
          * Word random patching
          */
-        count = res.size() / (m_density * 2);
+        count = res.size() / (m_opts.density * 2);
         if (!count)
             count++;
         ASSERT(res.size() >= 2);
@@ -224,7 +247,7 @@ std::vector<uint8_t> mutator::get_next_mutation()
          * DWord random patching
          */
         ASSERT(res.size() >= 4);
-        count = res.size() / (m_density * 4);
+        count = res.size() / (m_opts.density * 4);
         size_t maxIdx = res.size() - 3;
         if (!count)
             count++;

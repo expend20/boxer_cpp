@@ -3,11 +3,12 @@
 #include <windows.h>
 
 class iticker {
-    // this function is called on every iteration and returns true only if
-    // the state is changed
-    virtual void set_interval(ULONGLONG i) = 0;
-    virtual bool tick() = 0;
-    virtual void reset() = 0;
+    public:
+        // this function is called on every iteration and returns true only if
+        // the state is changed
+        virtual bool tick() = 0;
+        virtual void set_interval(ULONGLONG i) = 0;
+        virtual void reset() = 0;
 };
 
 class time_ticker: public iticker {

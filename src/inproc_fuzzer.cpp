@@ -132,12 +132,13 @@ void inprocess_fuzzer::process_output_corpus()
 }
 
 inprocess_fuzzer::inprocess_fuzzer(
+        mutator mut,
         inprocess_dll_harness* harness, 
         instrumenter* inst) : 
     m_harness_inproc(harness), 
-    m_inst(inst)
+    m_inst(inst),
+    m_mutator(std::move(mut))
 {
-    m_mutator = mutator();
 }
 
 void inprocess_fuzzer::restart_if_should()

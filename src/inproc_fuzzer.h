@@ -28,7 +28,9 @@ struct runner_thread_opts {
 
 class inprocess_fuzzer {
     public: 
-        inprocess_fuzzer(inprocess_dll_harness* harness, 
+        inprocess_fuzzer(
+                mutator mut,
+                inprocess_dll_harness* harness, 
                 instrumenter* inst);
         void run();
         bool cov_check_by_hash(const uint8_t* data, uint32_t size, 
@@ -56,7 +58,6 @@ class inprocess_fuzzer {
         void set_nocov_mode() { m_nocov_mode = true; };
 
         fuzzer_stats* get_stats() { return &m_stats; };
-        mutator* get_mutator() { return &m_mutator; };
 
     private:
         void run_session();

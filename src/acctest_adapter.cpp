@@ -136,7 +136,9 @@ int main(int argc, const char** argv)
         ins.explicit_instrument_module((size_t)lib, "AccTest.dll");
 
         auto inproc_harn = inprocess_dll_harness((size_t)lib, el.name, 0, 0, 0);
-        auto inproc_fuzz = inprocess_fuzzer(&inproc_harn, &ins);
+        auto inproc_fuzz = inprocess_fuzzer(
+                std::move(mutator(mutator_options())),
+                &inproc_harn, &ins);
 
         inproc_fuzz.set_zero_corp_sample_size(32);
         if (el.result & Timeout) {

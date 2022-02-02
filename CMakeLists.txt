@@ -116,7 +116,7 @@ FetchContent_MakeAvailable(googletest)
 enable_testing()
 
 add_executable(ticker_test
-    src/ticker_test.cpp
+    src/ticker_unittest.cpp
 )
 
 target_link_libraries(ticker_test
