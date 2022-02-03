@@ -2,6 +2,15 @@
 #include "mutator.h"
 #include <windows.h>
 
+mutator::mutator(mutator_options mo): 
+    m_opts(std::move(mo))
+{
+    m_ticker = m_opts.mode == num_based ?  
+        m_ticker = (iticker*)&m_num_ticker :
+        m_ticker = (iticker*)&m_time_ticker;
+    m_ticker->set_interval(m_opts.mutation_interval);
+};
+
 void mutator::add_sample_to_corpus(const uint8_t* data, uint32_t size)
 {
     ASSERT(m_corpus.size() == m_mutation_stats.size());
@@ -13,21 +22,15 @@ void mutator::add_sample_to_corpus(const uint8_t* data, uint32_t size)
 
     //SAY_INFO("adding sample -> %p, %x\n", data, size);
     std::vector<uint8_t> s;
-    //SAY_INFO("adding sample ::0 %d\n", size);
     s.resize(size);
-    //SAY_INFO("adding sample ::1\n");
     memcpy(&s[0], data, size);
-    //SAY_INFO("adding sample ::2\n");
     m_corpus.push_back(std::move(s));
 
-    //SAY_INFO("adding sample ::3\n");
     m_mutation_stats.insert(std::make_pair(0, m_corpus.size() - 1));
-    //SAY_INFO("adding sample <-\n");
 }
 
 void mutator::add_sample_to_corpus(std::vector<uint8_t> &sample)
 {
-
     ASSERT(m_corpus.size() == m_mutation_stats.size());
 
     if (!sample.size()) {
@@ -40,42 +43,68 @@ void mutator::add_sample_to_corpus(std::vector<uint8_t> &sample)
     m_mutation_stats.insert(std::make_pair(0, m_corpus.size() - 1));
 }
 
-std::vector<uint8_t> mutator::get_next_mutation() 
-{
-    if (!m_corpus.size()) {
-        SAY_FATAL("GetNext() called on empty corpus");
+size_t i = 0;
+void mutator::should_update_index() {
+    i++;
+    if (m_opts.mode != flat) {
+        auto t = m_ticker->tick();
+        if (m_cached_sample_idx == -1 || t) {
+            update_index_democratic();
+            //SAY_INFO("%d iter, update idx, %d %d\n", i, m_cached_sample_idx, t);
+        }
     }
+    else {
+        m_cached_sample_idx = rand() % m_corpus.size();
+    }
+}
 
+void mutator::update_index_democratic() {
     /*
      * Here we implement "democratic" approach, each sample is mutated equal
      * number of times (or equal amount of time if m_timeMutations is set).
      * This is tracked by multimap.
      */
-    auto t = m_ticker->tick();
-    if (!m_cached_sample_idx || t) {
-        size_t r = rand() % m_mutation_stats.size();
-        auto first_iter = m_mutation_stats.begin();
-        auto prev_mut_counter = (*first_iter).first;
+    size_t r = rand() % m_mutation_stats.size();
+    auto first_iter = m_mutation_stats.begin();
+    auto prev_mut_counter = (*first_iter).first;
 
-        if (r) {
-            for (size_t i = 0; i < r - 1; i++) {
-                // SAY_INFO("L: %d / %d, %d %d\n", i, r, firstIter->first,
-                //         firstIter->second);
-                first_iter++;
-                if (prev_mut_counter < first_iter->first) {
-                    break;
-                }
+    if (r) {
+        for (size_t i = 0; i < r - 1; i++) {
+            // SAY_INFO("L: %d / %d, %d %d\n", i, r, firstIter->first,
+            //         firstIter->second);
+            first_iter++;
+            if (prev_mut_counter < first_iter->first) {
+                break;
             }
         }
-
-        prev_mut_counter = (*first_iter).first;
-        m_cached_sample_idx = (*first_iter).second;
-        auto second_iter = next(first_iter);
-        m_mutation_stats.erase(first_iter, second_iter);
-        m_mutation_stats.insert(
-                std::make_pair(prev_mut_counter + m_opts.mutation_interval, 
-                    m_cached_sample_idx));
     }
+
+    prev_mut_counter = (*first_iter).first;
+    m_cached_sample_idx = (*first_iter).second;
+    auto second_iter = next(first_iter);
+    m_mutation_stats.erase(first_iter, second_iter);
+    m_mutation_stats.insert(
+            std::make_pair(prev_mut_counter + m_opts.mutation_interval, 
+                m_cached_sample_idx));
+}
+
+std::vector<uint8_t> mutator::one_byte_mutation() {
+
+    auto res_ptr = &m_corpus[m_cached_sample_idx];
+    std::vector<uint8_t> res;
+    res.resize(res_ptr->size());
+
+    auto r1 = rand() % res.size();
+    auto r2 = rand();
+
+    memcpy(&res[0], &((*res_ptr)[0]), res.size());
+    res[r1] = r2 & 0xff;
+
+    return std::move(res);
+
+}
+
+std::vector<uint8_t> mutator::regular_mutation() {
 
     auto res_ptr = &m_corpus[m_cached_sample_idx];
     std::vector<uint8_t> res;
@@ -212,5 +241,21 @@ std::vector<uint8_t> mutator::get_next_mutation()
     }
     }
 
-    return res;
+    return std::move(res);
+}
+
+std::vector<uint8_t> mutator::get_next_mutation() 
+{
+    if (!m_corpus.size()) {
+        SAY_FATAL("GetNext() called on empty corpus");
+    }
+
+    should_update_index();
+
+    if (m_opts.mutation_mode == regular) {
+        return mutator::regular_mutation();
+    }
+    else { // if (m_opts.mutation_mode == one_byte_only) {
+        return mutator::one_byte_mutation();
+    }
 }

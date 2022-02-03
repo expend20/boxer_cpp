@@ -19,7 +19,6 @@ int main(int argc, const char** argv)
         __debugbreak();
     }
 
-
     auto is_inst_bbs_path = GetOption("--inst_bbs_file", argc, argv);
     if (is_inst_bbs_path) {
         ins.set_bbs_inst();

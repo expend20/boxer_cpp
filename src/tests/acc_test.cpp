@@ -335,7 +335,7 @@ extern "C" __declspec(dllexport) void WINAPIV
     FuzzStr4(char *data, unsigned int len)
 {
     bool matched = true;
-    wchar_t magic[] = L"The Magic 1337 wcsni"; // 7133\x00";
+    wchar_t magic[] = L"1337 wcsni"; // 7133\x00";
 
     if (len <= sizeof(magic)) return;
 
@@ -356,7 +356,7 @@ extern "C" __declspec(dllexport) void WINAPIV
     FuzzStr5(char *data, unsigned int len)
 {
     bool matched = true;
-    wchar_t magic[] = L"The Magic 1337 wcsn"; // 7133\x00";
+    wchar_t magic[] = L"1337 wcsn"; // 7133\x00";
 
     size_t min_sz = len < sizeof(magic) - sizeof(magic[0]) ? 
         len : sizeof(magic) - sizeof(magic[0]);
@@ -376,7 +376,7 @@ extern "C" __declspec(dllexport) void WINAPIV
     FuzzStr6(char *data, unsigned int len)
 {
     bool matched = true;
-    wchar_t magic[] = L"The Magic 1337 wcsi"; // 7133\x00";
+    wchar_t magic[] = L"1337 wcsi"; // 7133\x00";
 
     if (len <= sizeof(magic)) return;
     if (len % 2) { // align to two byte boundary
@@ -400,7 +400,7 @@ extern "C" __declspec(dllexport) void WINAPIV
     FuzzStr7(char *data, unsigned int len)
 {
     bool matched = true;
-    wchar_t magic[] = L"The Magic 1337 wcs"; // 7133\x00";
+    wchar_t magic[] = L"1337 wcs"; // 7133\x00";
 
     if (len <= sizeof(magic)) return;
     if (len % 2) { // align to two byte boundary
@@ -931,6 +931,7 @@ extern "C" __declspec(dllexport) size_t WINAPIV
     return res;
 }
 
+
 extern "C" __declspec(dllexport) void WINAPIV
     FuzzMeBigStr(const char *data, unsigned int len)
 {
@@ -940,8 +941,7 @@ extern "C" __declspec(dllexport) void WINAPIV
 
     for (size_t i = 0; i < sizeof(magic); i++) {
 
-        if (i >= len) {
-            matched = false;
+        if (i == len) {
             break;
         }
 
@@ -964,8 +964,7 @@ extern "C" __declspec(dllexport) void WINAPIV
 
     for (size_t i = 0; i < sizeof(magic); i++) {
 
-        if (i >= len) {
-            matched = false;
+        if (i == len) {
             break;
         }
 

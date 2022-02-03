@@ -388,7 +388,6 @@ inprocess_fuzzer::try_to_fix_strings(uint8_t* data, uint32_t sz)
 {
     auto cmps = m_inst->get_strcmpcov();
     auto cmps_sz = cmps->size();
-    //SAY_INFO("strcmp cov size = .%d\n", cmps_sz);
 
     std::vector<std::vector<uint8_t>> res;
     if (!cmps_sz) return res;
@@ -440,7 +439,7 @@ inprocess_fuzzer::try_to_fix_strings(uint8_t* data, uint32_t sz)
                 SAY_ERROR("sz < cmp->size(), 0x%x vs 0x%x\n", sz, cmp->size());
                 continue;
             }
-            for (uint32_t i = 0; i < sz - cmp->size(); i++) {
+            for (uint32_t i = 0; i < sz - cmp->size() + 1; i++) {
 
                 //SAY_INFO("memcmp %p %p 0x%x | i 0x%x, sz 0x%x\n", 
                 //        &(*cmp)[0], &data[i], cmp->size(),
@@ -488,14 +487,15 @@ void inprocess_fuzzer::run_session()
         g_sanity_mutation++;
         auto new_sample = m_mutator.get_next_mutation();
 
-        //SAY_INFO("sample %p 0x%x\n", &new_sample[0], new_sample.size());
         m_inst->clear_strcmpcov();
         // run code
+        //SAY_INFO("sample %p 0x%x\n", &new_sample[0], new_sample.size());
         run_one_input(&new_sample[0], new_sample.size());
 
         auto str_samples = try_to_fix_strings(
                 &new_sample[0], new_sample.size());
         for (auto &str_sample: str_samples) {
+            //SAY_INFO("%p %x", &str_sample[0], str_sample.size());
             run_one_input(&str_sample[0], str_sample.size());
             m_stats.strcmp++;
         }

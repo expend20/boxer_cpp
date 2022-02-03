@@ -6,15 +6,25 @@
 #include <map>
 #include "ticker.h"
 
+enum mutation_mode {
+    one_byte_only,
+    regular,
+};
+
 enum mutator_mode {
+    // just pick a random sample from corpus and mutate it
+    flat,
+    // cache one sample for some interval in time
     time_based,
+    // cache one sample for some number of iterations
     num_based,
 };
 
 struct mutator_options {
-    mutator_mode mode = num_based;
+    mutator_mode mode = time_based;
+    mutation_mode mutation_mode = one_byte_only;
     size_t max_sample_size = 100000;
-    ULONGLONG mutation_interval = 500; // number or msec
+    ULONGLONG mutation_interval = 100; // number or msec
     size_t density = 32; // bytes to mutate = size / density
     
 };
@@ -22,13 +32,7 @@ struct mutator_options {
 class mutator {
 
     public:
-        mutator(mutator_options mo): 
-            m_opts(std::move(mo))
-        {
-            m_ticker = m_opts.mode == num_based ?  
-                    m_ticker = (iticker*)&m_num_ticker :
-                    m_ticker = (iticker*)&m_time_ticker;
-        };
+        mutator(mutator_options mo);
 
         std::vector<uint8_t> get_next_mutation();
 
@@ -37,7 +41,13 @@ class mutator {
         size_t get_corpus_size(){ return m_corpus.size(); };
 
     private:
-        size_t m_cached_sample_idx = 0;
+        void update_index_democratic();
+        void should_update_index();
+        std::vector<uint8_t> regular_mutation();
+        std::vector<uint8_t> one_byte_mutation();
+
+    private:
+        size_t m_cached_sample_idx = -1;
 
         std::vector<std::vector<uint8_t>> m_corpus;
 

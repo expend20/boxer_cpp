@@ -99,6 +99,10 @@ int main(int argc, const char** argv)
     auto save_samples = GetBinaryOption("--samples", argc, argv, false);
     auto is_disasm = GetBinaryOption("--disasm", argc, argv, false);
 
+    if (GetBinaryOption("--break", argc, argv, false)) {
+        __debugbreak();
+    }
+
     auto is_inst_bbs_path = GetOption("--inst_bbs_file", argc, argv);
     SAY_INFO("inst_bbs_file = %s\n", is_inst_bbs_path);
 
@@ -120,7 +124,7 @@ int main(int argc, const char** argv)
         auto ins = instrumenter();
         if (is_inst_bbs_path) {
             ins.set_bbs_inst();
-            //ins.set_bbs_inst_all();
+            ins.set_bbs_inst_all();
             ins.set_bbs_path(is_inst_bbs_path);
         }
         vehi.register_handler(&ins);
@@ -136,8 +140,11 @@ int main(int argc, const char** argv)
         ins.explicit_instrument_module((size_t)lib, "AccTest.dll");
 
         auto inproc_harn = inprocess_dll_harness((size_t)lib, el.name, 0, 0, 0);
+        auto mo = mutator_options();
+        mo.mutation_mode = regular;
+        mo.mode = num_based;
         auto inproc_fuzz = inprocess_fuzzer(
-                std::move(mutator(mutator_options())),
+                std::move(mutator(std::move(mo))),
                 &inproc_harn, &ins);
 
         inproc_fuzz.set_zero_corp_sample_size(32);
