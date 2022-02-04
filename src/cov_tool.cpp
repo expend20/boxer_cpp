@@ -20,14 +20,13 @@ bool operator!=(const XXH128_hash_t &x, const XXH128_hash_t &y)
 bool cov_tool::is_new_greater_byte(const uint8_t* cov, uint32_t sz) 
 {
     // if it's first run, shape the buffer
-    if (!m_cov_bits.size()) {
-        // make size 8 bytes aligned
-        m_cov_bits.resize(sz % ROUND_TO == 0 ? sz : 
-                sz + (ROUND_TO - (sz % ROUND_TO)));
+    if (!m_cov_bits.size() || sz > m_cov_bits.size()) {
+        m_cov_bits.resize(sz + (ROUND_TO - (sz % ROUND_TO)));
     }
     else {
         // buffer can be shaped only once, but if we dynamically continue 
         // instrumenting the code this is not the case
+        // NOTE: during reshaping all previous hashes become invalid
         //ASSERT(m_cov_bits.size() == sz);
     }
 
@@ -49,16 +48,15 @@ bool cov_tool::is_new_greater_byte(const uint8_t* cov, uint32_t sz)
 bool cov_tool::is_new_cov_bits(const uint8_t* cov, uint32_t sz) 
 {
     // if it's first run, shape the buffer
-    if (!m_cov_bits.size()) {
-        m_cov_bits.resize(sz % ROUND_TO == 0 ? sz : 
-                sz + (ROUND_TO - (sz % ROUND_TO)));
+    if (!m_cov_bits.size() || sz > m_cov_bits.size()) {
+        m_cov_bits.resize(sz + (ROUND_TO - (sz % ROUND_TO)));
     }
     else {
         // buffer can be shaped only once, but if we dynamically continue 
         // instrumenting the code this is not the case
+        // NOTE: during reshaping all previous hashes become invalid
         //ASSERT(m_cov_bits.size() == sz);
     }
-    ASSERT(sz % sizeof(size_t) == 0);
 
     bool res = false;
     size_t* p1 = (size_t*)&m_cov_bits[0];

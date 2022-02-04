@@ -541,6 +541,7 @@ void instrumenter::handle_crash(uint32_t code, size_t addr)
         //    __debugbreak();
         //}
     }
+    SAY_INFO("Ex %x at %s, %p\n", code, m_crash_info.mod_name.c_str(), addr);
     m_crash_info.code = code;
 }
 

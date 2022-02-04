@@ -39,24 +39,24 @@ AccTestCase AccTests[] = {
     {"FuzzMeTimeout", BitCov, Timeout},
     {"FuzzMe2_inc", IncCov, Crash},
     {"FuzzMe3", IncCov | StrcmpCov, Crash},
-    {"FuzzMe4", CmpCov, Crash},
+    {"FuzzMe4", CmpCov | BitCov, Crash},
     {"FuzzMe5", BitCov, Crash},
-    {"FuzzMe6", CmpCov, Crash},
-    {"FuzzMe7", CmpCov, Crash},
+    {"FuzzMe6", CmpCov | BitCov, Crash},
+    {"FuzzMe7", CmpCov | BitCov, Crash},
     
-    {"FuzzMeDWORD", CmpCov, Crash},
-    {"FuzzMeStack", BitCov | CmpCov, Crash},
+    {"FuzzMeDWORD", CmpCov | BitCov, Crash},
+    {"FuzzMeStack", CmpCov | BitCov, Crash},
     {"FuzzMeMyMemcmp", IncCov | CmpCov, Crash},
     {"FuzzMePatternMatch_idx", IncCov | CmpCov, Crash},
     
-    {"FuzzMeCmpRegImm", CmpCov, Crash},
-    {"FuzzMeCmpRegReg", CmpCov, Crash},
-    {"FuzzMeCmpMemReg", CmpCov, Crash},
-    {"FuzzMeCmpMemImm", CmpCov, Crash},
-    {"FuzzMeCmpStkReg", CmpCov, Crash},
-    {"FuzzMeCmpRelReg", CmpCov, Crash},
-    {"FuzzMeCmpRegRel", CmpCov, Crash},
-    {"FuzzMeTestRegReg", CmpCov, Crash},
+    {"FuzzMeCmpRegImm", CmpCov | BitCov, Crash},
+    {"FuzzMeCmpRegReg", CmpCov | BitCov, Crash},
+    {"FuzzMeCmpMemReg", CmpCov | BitCov, Crash},
+    {"FuzzMeCmpMemImm", CmpCov | BitCov, Crash},
+    {"FuzzMeCmpStkReg", CmpCov | BitCov, Crash},
+    {"FuzzMeCmpRelReg", CmpCov | BitCov, Crash},
+    {"FuzzMeCmpRegRel", CmpCov | BitCov, Crash},
+    {"FuzzMeTestRegReg", CmpCov | BitCov, Crash},
     
     {"FuzzStr0", BitCov | StrcmpCov, Crash},
     {"FuzzStr1", BitCov | StrcmpCov, Crash},
@@ -64,9 +64,9 @@ AccTestCase AccTests[] = {
     {"FuzzStr3", BitCov | StrcmpCov, Crash},
     {"FuzzMeBigStr", IncCov, Crash}, // grow buf
     {"FuzzMeNotSoBigStr", IncCov, Crash}, // shrink buf
-    {"FuzzMeAvoid", CmpCov, Crash}, 
+    {"FuzzMeAvoid", CmpCov | BitCov, Crash}, 
     
-    {"FuzzMeSubRegImm", CmpCov, Crash},
+    {"FuzzMeSubRegImm", CmpCov | BitCov, Crash},
 
     {"FuzzStr4", BitCov | StrcmpCov, Crash},
     {"FuzzStr5", BitCov | StrcmpCov, Crash},
@@ -80,10 +80,10 @@ AccTestCase AccTests[] = {
 
     //{"FuzzMeStackOverflow", BitCov, Crash}, // TODO: process stop
     //{"FuzzMeStackChkstk", BitCov | CmpCov, Crash}, // TODO: process stop
-    //{"FuzzMeSubRegReg", CmpCov, Crash}, // TODO: implement in acctest
-    //{"FuzzMeSubMemReg", CmpCov, Crash}, // TODO: implement in acctest 
-    //{"FuzzMeSubStkReg", CmpCov, Crash}, // TODO: implement in acctest
-    //{"FuzzMeSubRelReg", CmpCov, Crash}, // TODO: implement in acctest
+    //{"FuzzMeSubRegReg", CmpCov | BitCov, Crash}, // TODO: implement in acctest
+    //{"FuzzMeSubMemReg", CmpCov | BitCov, Crash}, // TODO: implement in acctest 
+    //{"FuzzMeSubStkReg", CmpCov | BitCov, Crash}, // TODO: implement in acctest
+    //{"FuzzMeSubRelReg", CmpCov | BitCov, Crash}, // TODO: implement in acctest
     
 
 };

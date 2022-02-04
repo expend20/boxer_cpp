@@ -19,6 +19,7 @@ class cov_tool {
         bool is_new_greater_byte(const uint8_t* cov, uint32_t sz);
         void add_hash(XXH128_hash_t h);
         size_t hashes_size(){ return m_cov_bits_hashes.size(); };
+        void clear(){ m_cov_bits.clear(); m_cov_bits_hashes.clear(); };
 
     private:
         std::vector<uint8_t> m_cov_bits;

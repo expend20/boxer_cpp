@@ -140,7 +140,7 @@ int main(int argc, const char** argv)
     }
     SAY_INFO("timeout_v = %d\n", timeout_v);
 
-    uint32_t zero_corp_sample_size_val = 2048;
+    uint32_t zero_corp_sample_size_val = 512;
     auto zero_corp_sample_size = GetOption("--zero_corp_sample_size", 
             argc, argv);
     if (zero_corp_sample_size) {
