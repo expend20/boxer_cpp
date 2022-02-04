@@ -21,10 +21,10 @@ enum mutator_mode {
 };
 
 struct mutator_options {
-    mutator_mode mode = time_based;
-    mutation_mode mutation_mode = one_byte_only;
+    mutator_mode mode = num_based;
+    mutation_mode mutation_mode = regular;
     size_t max_sample_size = 100000;
-    ULONGLONG mutation_interval = 300; // number or msec
+    ULONGLONG mutation_interval = 500; // number or msec
     size_t density = 32; // bytes to mutate = size / density
     
 };

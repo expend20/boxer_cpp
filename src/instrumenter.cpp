@@ -81,6 +81,10 @@ void instrumenter::clear_cov()
     mod->cov.end();
 }
 
+//void instrumenter::clear_passed_cmpcov_code()
+//{
+//}
+
 void instrumenter::clear_passed_cmpcov_code()
 {
     if (m_inst_mods.size() != 1) {
@@ -94,9 +98,10 @@ void instrumenter::clear_passed_cmpcov_code()
     auto offset = mod->translator.get_cmpcov_offset();
     bool unlocked = false;
     for (uint32_t i = 0; i < offset; i++) {
+        auto el = &(*ci)[i];
         if (data[i] && 
-                (*ci)[i].all_bits && 
-                data[i] == (*ci)[i].all_bits) {
+                el->all_bits && 
+                data[i] == el->all_bits) {
 
             data[i] = 0;
 
@@ -108,8 +113,8 @@ void instrumenter::clear_passed_cmpcov_code()
 
             //SAY_INFO("Let's clear cmp %x %p %p\n", i, (*ci)[i].start, 
             //        (*ci)[i].end);
-            mod->translator.make_jump_from_inst_to_inst((*ci)[i].start, 
-                    (*ci)[i].end);
+            //memcpy(el->saved_on_clear, el->start, 5);
+            mod->translator.make_jump_from_inst_to_inst(el->start, el->end);
             m_stats.cmpcov_cleaned++;
         }
     }

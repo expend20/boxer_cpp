@@ -543,7 +543,7 @@ void inprocess_fuzzer::fuzz_one_sample(uint8_t* data, size_t size)
     m_cov_cmp_loc.clear();
 
     auto tt = time_ticker();
-    tt.set_interval(5 * 60 * 1000); // 5 minutes
+    tt.set_interval(5 * 60 * 1000); // 2 minutes
     iticker* ticker = (iticker*)&tt;
 
     m_inst->clear_cmpcov();
