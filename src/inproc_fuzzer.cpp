@@ -113,6 +113,7 @@ void inprocess_fuzzer::process_output_corpus()
         m_out_corpus = helper::files_to_vector(m_output_corpus_path);
         if (!m_out_corpus.size()) {
             SAY_INFO("No files were read from output corpus\n");
+            m_runner_thread_opts.is_output_processed = true;
             return;
         }
     }
@@ -621,6 +622,10 @@ void inprocess_fuzzer::run_session()
 
     do { 
         auto r = m_mutator_global.get_random_sample();
+        SAY_INFO("global mutator size %d, sample choosen %p, 0x%x\n",
+                m_mutator_global.get_corpus_size(),
+                &r[0], 
+                r.size());
         fuzz_one_sample(&r[0], r.size());
 
     } while(1);
@@ -716,6 +721,7 @@ void inprocess_fuzzer::run()
         // check for timeout and terminate thread if need
         else if (m_start_ticks && cur_time - m_start_ticks > m_timeout) {
 
+            save_sample(g_sanity_data, g_sanity_size, 0, true);
             SAY_INFO("timeout detected, %llu %llu %llu %llu exiting "
                     "thread...\n",
                     m_start_ticks, cur_time, 

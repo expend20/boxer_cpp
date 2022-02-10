@@ -1100,8 +1100,8 @@ DWORD instrumenter::handle_veh(_EXCEPTION_POINTERS* ex_info) {
 
                 SAY_INFO("av ctx %p\n", m_ctx);
                 handle_crash(ex_code, pc);
-                Sleep(INFINITE);
-                __debugbreak();
+                //Sleep(INFINITE);
+                //__debugbreak();
                 
 #ifdef _WIN64
                 if (m_restore_ctx.Rip) {
