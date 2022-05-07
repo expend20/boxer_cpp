@@ -8,8 +8,44 @@
 
 #include "inproc_fuzzer.h"
 
+std::vector<const char*> get_fuzz_argv(int argc, const char** argv) 
+{
+    std::vector<const char*> r;
+    for (int i = 0; i < argc; i++) {
+        if (!strcmp(argv[i], "--")) {
+            break;
+        }
+        r.push_back(argv[i]);
+    }
+    return r;
+}
+
+std::vector<const char*> get_tgt_argv(int argc, const char** argv) 
+{
+    std::vector<const char*> r;
+    bool marker_found = false;
+    for (int i = 0; i < argc; i++) {
+        if (!strcmp(argv[i], "--")) {
+            marker_found = true;
+            continue;
+        }
+        if (marker_found) r.push_back(argv[i]);
+    }
+    return r;
+}
+
+
 int main(int argc, const char** argv)
 {
+
+    auto fuzz_argv = get_fuzz_argv(argc, argv);
+    auto tgt_argv = get_tgt_argv(argc, argv);
+    argc = fuzz_argv.size();
+    argv = &fuzz_argv[0];
+
+    auto argc_tgt = tgt_argv.size();
+    auto argv_tgt = &tgt_argv[0];
+
     init_logs(argc, argv);
 
     auto ins = instrumenter();
@@ -140,7 +176,7 @@ int main(int argc, const char** argv)
     }
     SAY_INFO("timeout_v = %d\n", timeout_v);
 
-    uint32_t zero_corp_sample_size_val = 2048;
+    uint32_t zero_corp_sample_size_val = 512;
     auto zero_corp_sample_size = GetOption("--zero_corp_sample_size", 
             argc, argv);
     if (zero_corp_sample_size) {
@@ -225,7 +261,7 @@ int main(int argc, const char** argv)
                 helper::getLastErrorAsString().c_str());
 
     auto inproc_harn = inprocess_dll_harness((size_t)lib_harness, func, 
-            init_func, argc, argv);
+            init_func, argc_tgt, argv_tgt);
     std::vector<size_t> libs_resolved;
     for (auto &mod_name: cov_mods) {
         auto lib = (size_t)LoadLibrary(mod_name);

@@ -21,10 +21,10 @@ enum mutator_mode {
 };
 
 struct mutator_options {
-    mutator_mode mode = time_based;
-    mutation_mode mutation_mode = one_byte_only;
+    mutator_mode mode = num_based;
+    mutation_mode mutation_mode = regular;
     size_t max_sample_size = 100000;
-    ULONGLONG mutation_interval = 100; // number or msec
+    ULONGLONG mutation_interval = 500; // number or msec
     size_t density = 32; // bytes to mutate = size / density
     
 };
@@ -39,6 +39,8 @@ class mutator {
         void add_sample_to_corpus(std::vector<uint8_t> &sample);
         void add_sample_to_corpus(const uint8_t* data, uint32_t size);
         size_t get_corpus_size(){ return m_corpus.size(); };
+        std::vector<uint8_t> get_random_sample();
+        mutator_options clone_opts(){ return m_opts; };
 
     private:
         void update_index_democratic();
@@ -60,7 +62,6 @@ class mutator {
         iticker* m_ticker = 0;
 
         mutator_options m_opts;
-
 
 };
 

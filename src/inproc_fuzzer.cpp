@@ -39,7 +39,7 @@ void inprocess_fuzzer::set_timeout_dir(const char* path)
 
 void inprocess_fuzzer::assure_input_samples() {
 
-    if (!m_mutator.get_corpus_size()) {
+    if (!m_mutator_global.get_corpus_size()) {
         // no input corpus, put at least something
         std::vector<uint8_t> sample;
         SAY_INFO("Fake sample size %d\n", m_zero_corp_sample_size);
@@ -48,13 +48,18 @@ void inprocess_fuzzer::assure_input_samples() {
         for (uint32_t i = 0; i < sample.size(); i++) {
             sample[i] = rand() % 256;
         }
-        run_one_input(&sample[0], sample.size(), true, m_nocov_mode);
+        run_one_input(&sample[0], sample.size(), 
+                0, 0, 0, 0, true, m_nocov_mode);
     }
 
-    if (!m_mutator.get_corpus_size()) {
+    if (!m_mutator_global.get_corpus_size()) {
         SAY_FATAL("No valid input samples, meaning no sample produced any "
-                "coverage, revisit your parameters\n");
+                "coverage, revisit your parameters (%d %d %d)\n",
+                m_cov_bits_global.hashes_size(),
+                m_cov_inc_global.hashes_size(),
+                m_cov_cmp_global.hashes_size());
     }
+    SAY_INFO("Input samples assured %d\n", m_mutator_global.get_corpus_size());
 }
 
 ULONGLONG inprocess_fuzzer::get_elapsed_seconds() {
@@ -91,7 +96,8 @@ void inprocess_fuzzer::process_input_corpus()
         if (m_in_corpus.size() == 0) 
             m_runner_thread_opts.is_input_processed = true;
 
-        run_one_input(&sample[0], sample.size(), true, m_nocov_mode);
+        run_one_input(&sample[0], sample.size(), 
+                0, 0, 0, 0, true, m_nocov_mode);
     }
 
 }
@@ -107,6 +113,7 @@ void inprocess_fuzzer::process_output_corpus()
         m_out_corpus = helper::files_to_vector(m_output_corpus_path);
         if (!m_out_corpus.size()) {
             SAY_INFO("No files were read from output corpus\n");
+            m_runner_thread_opts.is_output_processed = true;
             return;
         }
     }
@@ -127,7 +134,7 @@ void inprocess_fuzzer::process_output_corpus()
             SAY_INFO("%d / %d, elapsed %llu seconds\n", i, corpus_size,
                     get_elapsed_seconds());
         }
-        run_one_input(&sample[0], sample.size(), false);
+        run_one_input(&sample[0], sample.size(), 0, 0, 0, 0, false);
     }
 }
 
@@ -137,7 +144,8 @@ inprocess_fuzzer::inprocess_fuzzer(
         instrumenter* inst) : 
     m_harness_inproc(harness), 
     m_inst(inst),
-    m_mutator(std::move(mut))
+    m_mutator_loc(mut.clone_opts()),
+    m_mutator_global(std::move(mut))
 {
 }
 
@@ -166,7 +174,7 @@ void inprocess_fuzzer::print_stats(bool force)
                 "%10llu (%llu) crashes, %10llu timeouts, %10llu total execs, "
                 " %10llu new execs\n"
                 "%10lu stable cov, %10llu unstable cov, %10llu cmpcov bits\n"
-                "%10llu strcmp %10u mutator corp\n",
+                "%10llu strcmp %10u mutator glob (%u loc)\n",
                 fcps,
                 (double)m_stats.execs / (m_print_stats_count * 
                     m_stats_sec_timeout),
@@ -174,9 +182,10 @@ void inprocess_fuzzer::print_stats(bool force)
                 hours, minutes, seconds,
                 m_stats.crashes, m_stats.unique_crashes, m_stats.timeouts, 
                 m_stats.execs, newExecs,
-                m_cov_bits_total.hashes_size(), m_stats.unstable_cov, 
+                m_cov_bits_global.hashes_size(), m_stats.unstable_cov, 
                 m_stats.cmpcov_bits,
-                m_stats.strcmp, m_mutator.get_corpus_size()
+                m_stats.strcmp, m_mutator_global.get_corpus_size(),
+                m_mutator_loc.get_corpus_size()
                 );
         m_inst->print_stats();
 
@@ -197,8 +206,11 @@ void __declspec(noinline) inprocess_fuzzer::call_proc() {
     __nop();
 }
 
-bool inprocess_fuzzer::cov_check_by_hash(const uint8_t* data, uint32_t size,
-        bool* is_unstable) 
+bool inprocess_fuzzer::stabilize_by_hash(
+        const uint8_t* data, 
+        uint32_t size, 
+        bool* is_unstable,
+        cov_tool* ct) 
 {
     bool res = false;
     std::set<XXH128_hash_t> hashes;
@@ -230,14 +242,16 @@ bool inprocess_fuzzer::cov_check_by_hash(const uint8_t* data, uint32_t size,
         ASSERT(cov && cov_sz);
 
         auto h = cov_tool::get_cov_hash(cov, cov_sz);
-        if (!hashes.size() && !m_cov_bits_total.is_new_cov_hash(h, false)) {
+        if (!hashes.size() && !ct->is_new_cov_hash(h, false)) {
             // first iteration, no new cov found
             break;
         }
 
         if (hashes.size() && hashes.find(h) != hashes.end()) {
             // we've got new stable hash
-            m_cov_bits_total.add_hash(h);
+            ct->add_hash(h);
+            // add it to global hashes
+            m_cov_bits_global.add_hash(h);
             res = true;
             break;
         }
@@ -301,18 +315,26 @@ void inprocess_fuzzer::save_sample(const uint8_t* data, uint32_t size,
     helper::writeFile(buf, (const char*)data, size, "wb");
 }
 
-void inprocess_fuzzer::run_one_input(const uint8_t* data, uint32_t size,
-        bool save_to_disk, bool force_add_sample) 
+void inprocess_fuzzer::run_one_input(
+        const uint8_t* data, uint32_t size,
+        cov_tool* ct_bits,
+        cov_tool* ct_inc,
+        cov_tool* ct_cmp,
+        mutator* mut_loc,
+        bool save_to_disk, 
+        bool force_add_sample)
 {
     ASSERT(data);
     ASSERT(size);
     m_stats.execs++;
 
     bool is_unstable = false;
-    bool should_add_to_corpus = false;
+    bool should_add_to_corpus_loc = false;
+    bool should_add_to_corpus_global = false;
     bool should_save_to_disk = false;
     // stability is judged based on bits not inc
-    auto new_hash_by_bits = cov_check_by_hash(data, size, &is_unstable);
+    auto is_new_hash = stabilize_by_hash(data, size, &is_unstable,
+            ct_bits ? ct_bits : &m_cov_bits_global);
 
     if (m_nocov_mode && !force_add_sample) {
         // don't waste time on checks becase we're in nocov mode
@@ -321,34 +343,53 @@ void inprocess_fuzzer::run_one_input(const uint8_t* data, uint32_t size,
         return;
     }
     
-    if (m_is_timeouted) {
-        SAY_INFO("Timeouted sample...\n");
-        save_sample(data, size, 0, true);
-        m_is_timeouted = false;
-        return;
-    }
-
     if (is_unstable) return;
 
-    if (new_hash_by_bits) {
+    if (is_new_hash) {
+
         if (m_is_hashcov) {
-            should_add_to_corpus = true;
+            should_add_to_corpus_loc = true;
         }
-        else {
-            uint32_t cov_sz = 0;
-            uint8_t* cov = 0;
-            cov = m_inst->get_cov(&cov_sz);
-            if (m_is_bitcov && 
-                    m_cov_bits_total.is_new_cov_bits(cov, cov_sz)) {
-                m_stats.new_bits++;
-                should_add_to_corpus = true;
-                should_save_to_disk = true;
+
+        uint32_t cov_sz = 0;
+        uint8_t* cov = 0;
+        cov = m_inst->get_cov(&cov_sz);
+
+        if (m_is_bitcov) {
+            bool cg = true;
+
+            if (ct_bits) {
+                if (ct_bits->is_new_cov_bits(cov, cov_sz)) {
+                    should_add_to_corpus_loc = true;
+                }
+                else {
+                    cg = false;
+                }
             }
-            if (m_is_inccov &&
-                    m_cov_inc_total.is_new_greater_byte(cov, cov_sz)) {
-                m_stats.new_inc++;
-                should_add_to_corpus = true;
+
+            if (cg && m_cov_bits_global.is_new_cov_bits(cov, cov_sz)) {
+                should_add_to_corpus_global = true;
                 should_save_to_disk = true;
+                m_stats.new_bits++;
+            }
+        }
+
+        if (m_is_inccov) {
+            bool cg = true;
+
+            if (ct_inc) {
+                if (ct_inc->is_new_greater_byte(cov, cov_sz)) {
+                    should_add_to_corpus_loc = true;
+                }
+                else {
+                    cg = false;
+                }
+            }
+
+            if (cg && m_cov_inc_global.is_new_greater_byte(cov, cov_sz)) {
+                should_add_to_corpus_global = true;
+                should_save_to_disk = true;
+                m_stats.new_inc++;
             }
         }
     }
@@ -360,19 +401,34 @@ void inprocess_fuzzer::run_one_input(const uint8_t* data, uint32_t size,
     // cmpcov is bits only, so we may not clear it, we only check for new ones;
     // thus we can use hash to speed up the process
     if (cmpcov_sz) {
+        bool cg = true;
         auto h = cov_tool::get_cov_hash(cmpcov, cmpcov_sz);
-        if (m_cov_cmp_total.is_new_cov_hash(h)) {
-            m_stats.cmpcov_bits++;
-            should_add_to_corpus = true;
-            should_save_to_disk = true;
+        if (ct_cmp) {
+            if (ct_cmp->is_new_cov_hash(h)) {
+                should_add_to_corpus_loc = true;
 
-            // clear passed cmp cases
-            m_inst->clear_passed_cmpcov_code();
+                // TODO: save and restory these checks during local cov reset
+                // clear passed cmp cases
+                //m_inst->clear_passed_cmpcov_code();
+            }
+            else {
+                cg = false;
+            }
+        }
+
+        if (cg && m_cov_cmp_global.is_new_cov_bits(cmpcov, cmpcov_sz)) {
+            should_add_to_corpus_global = true;
+            should_save_to_disk = true;
+            m_stats.cmpcov_bits++;
         }
     }
 
-    if (should_add_to_corpus || force_add_sample) {
-        m_mutator.add_sample_to_corpus(data, size);
+    if (should_add_to_corpus_loc || force_add_sample) {
+        mut_loc->add_sample_to_corpus(data, size);
+    }
+
+    if (should_add_to_corpus_global || force_add_sample) {
+        m_mutator_global.add_sample_to_corpus(data, size);
     }
 
     if (save_to_disk && should_save_to_disk) {
@@ -382,7 +438,6 @@ void inprocess_fuzzer::run_one_input(const uint8_t* data, uint32_t size,
 
 }
 
-// TODO: refactor buggy func
 std::vector<std::vector<uint8_t>>
 inprocess_fuzzer::try_to_fix_strings(uint8_t* data, uint32_t sz)
 {
@@ -474,31 +529,104 @@ inprocess_fuzzer::try_to_fix_strings(uint8_t* data, uint32_t sz)
 
 }
 
-void inprocess_fuzzer::run_session()
+void inprocess_fuzzer::fuzz_one_sample(uint8_t* data, size_t size) 
 {
-    SAY_INFO("Running fuzzing session...\n");
-    do { 
+    SAY_INFO("Sample choosen with size %d\n", size);
+
+    auto mo = m_mutator_global.clone_opts();
+    //mo.mutation_mode = mutation_mode::one_byte_only;
+    //mo.mode = mutator_mode::flat;
+    m_mutator_loc = mutator(std::move(mo));
+    m_mutator_loc.add_sample_to_corpus(data, size);
+
+    m_cov_bits_loc.clear();
+    m_cov_inc_loc.clear();
+    m_cov_cmp_loc.clear();
+
+    auto tt = time_ticker();
+    tt.set_interval(5 * 60 * 1000); // 2 minutes
+    iticker* ticker = (iticker*)&tt;
+
+    m_inst->clear_cmpcov();
+    // init cov buffers
+    run_one_input(data, size,
+            &m_cov_bits_global, 
+            &m_cov_inc_global,
+            &m_cov_cmp_global,
+            &m_mutator_loc);
+
+    uint32_t cov_sz = 0;
+    uint8_t* cov = 0;
+    cov = m_inst->get_cov(&cov_sz);
+
+    m_cov_bits_loc.is_new_cov_bits(cov, cov_sz);
+    m_cov_inc_loc.is_new_greater_byte(cov, cov_sz);
+
+    uint32_t cmpcov_sz = 0;
+    uint8_t* cmpcov = 0;
+    cmpcov = m_inst->get_cmpcov(&cmpcov_sz);
+    auto h = cov_tool::get_cov_hash(cmpcov, cmpcov_sz);
+    m_cov_cmp_loc.is_new_cov_hash(h);
+    m_cov_cmp_loc.is_new_cov_bits(cmpcov, cmpcov_sz);
+
+    size_t local_runs = 0;
+
+    while (!ticker->tick()) {
+        local_runs++;
+
         if (m_stats.execs % 10 == 0) {
             print_stats(false);
             //restart_if_should();
         }
 
-        // get mutation
         g_sanity_mutation++;
-        auto new_sample = m_mutator.get_next_mutation();
+        auto new_sample = m_mutator_loc.get_next_mutation();
 
         m_inst->clear_strcmpcov();
         // run code
         //SAY_INFO("sample %p 0x%x\n", &new_sample[0], new_sample.size());
-        run_one_input(&new_sample[0], new_sample.size());
+        run_one_input(&new_sample[0], new_sample.size(),
+                &m_cov_bits_loc, 
+                &m_cov_inc_loc,
+                &m_cov_cmp_loc,
+                &m_mutator_loc);
 
         auto str_samples = try_to_fix_strings(
                 &new_sample[0], new_sample.size());
         for (auto &str_sample: str_samples) {
             //SAY_INFO("%p %x", &str_sample[0], str_sample.size());
-            run_one_input(&str_sample[0], str_sample.size());
+            g_sanity_mutation++;
+            run_one_input(&str_sample[0], str_sample.size(),
+                    &m_cov_bits_global, 
+                    &m_cov_inc_global,
+                    &m_cov_cmp_global,
+                    &m_mutator_loc);
+
             m_stats.strcmp++;
         }
+    }
+
+    SAY_INFO("Dropping sample, local stats: %d runs, %d corpus\n", 
+            local_runs, m_mutator_loc.get_corpus_size());
+
+}
+
+void inprocess_fuzzer::run_session()
+{
+    SAY_INFO("Running fuzzing session...\n");
+    // Here we pick random sample from total corpus, and use local 
+    // coverage buffers to discover new (local) samples. If overall (total)
+    // coverage is found during this fuzzing we add it to total corpus.
+    // Otherwise we just mutating it based on local coverage. Once in a while
+    // local coverage is dropped and new sample is chosen.
+
+    do { 
+        auto r = m_mutator_global.get_random_sample();
+        SAY_INFO("global mutator size %d, sample choosen %p, 0x%x\n",
+                m_mutator_global.get_corpus_size(),
+                &r[0], 
+                r.size());
+        fuzz_one_sample(&r[0], r.size());
 
     } while(1);
 }
@@ -593,6 +721,7 @@ void inprocess_fuzzer::run()
         // check for timeout and terminate thread if need
         else if (m_start_ticks && cur_time - m_start_ticks > m_timeout) {
 
+            save_sample(g_sanity_data, g_sanity_size, 0, true);
             SAY_INFO("timeout detected, %llu %llu %llu %llu exiting "
                     "thread...\n",
                     m_start_ticks, cur_time, 

@@ -88,16 +88,22 @@ void mutator::update_index_democratic() {
                 m_cached_sample_idx));
 }
 
-std::vector<uint8_t> mutator::one_byte_mutation() {
+std::vector<uint8_t> mutator::get_random_sample() {
+    auto res_ptr = &m_corpus[rand() % m_corpus.size()];
 
-    auto res_ptr = &m_corpus[m_cached_sample_idx];
     std::vector<uint8_t> res;
     res.resize(res_ptr->size());
+    memcpy(&res[0], &((*res_ptr)[0]), res.size());
+    
+    return std::move(res);
+}
 
+std::vector<uint8_t> mutator::one_byte_mutation() {
+
+    auto res = get_random_sample();
     auto r1 = rand() % res.size();
     auto r2 = rand();
 
-    memcpy(&res[0], &((*res_ptr)[0]), res.size());
     res[r1] = r2 & 0xff;
 
     return std::move(res);

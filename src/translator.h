@@ -41,6 +41,7 @@ struct cmpcov_info {
     size_t start = 0;
     size_t end = 0;
     uint8_t all_bits = 0;
+    uint8_t saved_on_clear[5];
 };
 
 class translator {

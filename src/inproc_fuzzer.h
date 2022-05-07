@@ -32,8 +32,11 @@ class inprocess_fuzzer {
                 inprocess_dll_harness* harness, 
                 instrumenter* inst);
         void run();
-        bool cov_check_by_hash(const uint8_t* data, uint32_t size, 
-                bool* is_unstable);
+        bool stabilize_by_hash(
+                const uint8_t* data, 
+                uint32_t size, 
+                bool* is_unstable,
+                cov_tool* ct);
 
         void set_input(const char* path);
         void set_output(const char* path);
@@ -55,13 +58,20 @@ class inprocess_fuzzer {
         };
         void set_stop_on_timeout() { m_stop_on_timeout = true; };
         void set_nocov_mode() { m_nocov_mode = true; };
+        void fuzz_one_sample(uint8_t* data, size_t size);
 
         fuzzer_stats* get_stats() { return &m_stats; };
 
     private:
         void run_session();
-        void run_one_input(const uint8_t* data, uint32_t size, 
-                bool save_to_disk = true,
+
+        void run_one_input(
+                const uint8_t* data, uint32_t size,
+                cov_tool* ct_bits,
+                cov_tool* ct_inc,
+                cov_tool* ct_cmp,
+                mutator* mut_loc,
+                bool save_to_disk = true, 
                 bool force_add_sample = false);
 
         void print_stats(bool force);
@@ -84,13 +94,18 @@ class inprocess_fuzzer {
         inprocess_dll_harness* m_harness_inproc = 0;
         instrumenter* m_inst = 0;
 
-        mutator m_mutator;
+        mutator m_mutator_global;
+        mutator m_mutator_loc;
         uint32_t m_stats_sec_timeout = 3;
 
         fuzzer_stats m_stats;
-        cov_tool m_cov_bits_total;
-        cov_tool m_cov_inc_total;
-        cov_tool m_cov_cmp_total;
+        cov_tool m_cov_bits_global;
+        cov_tool m_cov_inc_global;
+        cov_tool m_cov_cmp_global;
+
+        cov_tool m_cov_bits_loc;
+        cov_tool m_cov_inc_loc;
+        cov_tool m_cov_cmp_loc;
 
         const char* m_input_corpus_path = 0;
         const char* m_output_corpus_path = 0;
@@ -104,7 +119,6 @@ class inprocess_fuzzer {
         bool m_is_hashcov = false;
         bool m_is_bitcov = false;
         bool m_is_save_samples = false;
-        bool m_is_timeouted = false;
 
         uint32_t m_thread_id = 0;
         HANDLE m_thread_ex_thrower = 0;
