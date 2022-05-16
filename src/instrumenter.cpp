@@ -546,7 +546,7 @@ void instrumenter::handle_crash(uint32_t code, size_t addr)
         //    __debugbreak();
         //}
     }
-    SAY_INFO("Ex %x at %s, %p\n", code, m_crash_info.mod_name.c_str(), addr);
+    //SAY_INFO("Ex %x at %s, %p\n", code, m_crash_info.mod_name.c_str(), addr);
     m_crash_info.code = code;
 }
 
@@ -1098,7 +1098,7 @@ DWORD instrumenter::handle_veh(_EXCEPTION_POINTERS* ex_info) {
                 break;
             case STATUS_ACCESS_VIOLATION:
 
-                SAY_INFO("av ctx %p\n", m_ctx);
+                //SAY_INFO("av ctx %p\n", m_ctx);
                 handle_crash(ex_code, pc);
                 //Sleep(INFINITE);
                 //__debugbreak();
@@ -1108,7 +1108,6 @@ DWORD instrumenter::handle_veh(_EXCEPTION_POINTERS* ex_info) {
 #else 
                 if (m_restore_ctx.Eip) {
 #endif
-
                     adjust_restore_context();
                     //SAY_INFO("Crash ctx %p, restore ctx %p\n", m_ctx,
                     //        &m_restore_ctx);
