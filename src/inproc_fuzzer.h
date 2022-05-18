@@ -43,6 +43,7 @@ class inprocess_fuzzer {
         void set_zero_corp_sample_size(uint32_t v) {
             m_zero_corp_sample_size = v; 
         };
+        void set_maxcov(){ m_is_maxcov = true; };
         void set_inccov(){ m_is_inccov = true; };
         void set_hashcov(){ m_is_hashcov = true; };
         void set_bitcov(){ m_is_bitcov = true; };
@@ -100,6 +101,7 @@ class inprocess_fuzzer {
 
         bool m_cmin_mode = false;
         bool m_nocov_mode = false;
+        bool m_is_maxcov = false;
         bool m_is_inccov = false;
         bool m_is_hashcov = false;
         bool m_is_bitcov = false;

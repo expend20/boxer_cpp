@@ -98,6 +98,9 @@ int main(int argc, const char** argv)
     auto is_hashcov = GetBinaryOption("--hashcov", argc, argv, false);
     SAY_INFO("hashcov = %d\n", is_hashcov);
 
+    auto is_maxcov = GetBinaryOption("--maxcov", argc, argv, true);
+    SAY_INFO("maxcov = %d\n", is_maxcov);
+
     auto is_inccov = GetBinaryOption("--inccov", argc, argv, true);
     SAY_INFO("inccov = %d\n", is_inccov);
 
@@ -299,6 +302,8 @@ int main(int argc, const char** argv)
         inproc_fuzz.set_nocov_mode();
     if (zero_corp_sample_size_val)
         inproc_fuzz.set_zero_corp_sample_size(zero_corp_sample_size_val);
+    if (is_maxcov)
+        inproc_fuzz.set_maxcov();
     if (is_inccov)
         inproc_fuzz.set_inccov();
     if (is_bitcov)

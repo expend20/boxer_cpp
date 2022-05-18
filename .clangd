@@ -1,2 +1,7 @@
 CompileFlags:
-  Add: ["-IC:\\git\\boxer_cpp\\build\\third_party\\obj\\wkit\\include"]
+  Add: [
+  -std=c++2b,
+  "-IC:\\git\\boxer_cpp\\build\\third_party\\obj\\wkit\\include",
+  "-IC:\\git\\boxer_cpp\\third_party",
+  "-IC:\\git\\boxer_cpp\\build\\_deps\\googletest-src\\googletest\\include",
+   ]

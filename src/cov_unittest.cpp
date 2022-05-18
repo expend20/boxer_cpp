@@ -9,7 +9,6 @@ uint8_t cov3[] = {0, 1, 2, 3, 0, 0, 0, 0};
 
 TEST(cov_tool, bits_check) 
 {
-
     cov_tool ct;
     // zero buffer
     EXPECT_FALSE(ct.is_new_cov_bits(cov0, sizeof(cov0)));
@@ -67,3 +66,23 @@ TEST(cov_tool, hashes)
     EXPECT_FALSE(ct.is_new_cov_hash(h2, true));
     EXPECT_FALSE(ct.is_new_cov_hash(h3, true));
 }
+
+uint8_t max_cov1[] = {0, 1, 1, 0, 0, 0, 0, 0, 1, 1};
+uint8_t max_cov2[] = {0, 0, 0, 1, 0, 0, 0, 0, 1, 1};
+uint8_t max_cov3[] = {0, 1, 1, 1, 0, 0, 0, 0, 1, 1};
+uint8_t max_cov4[] = {0, 1, 1, 1, 0, 0, 0, 0, 0, 0};
+
+TEST(cov_tool, max_check) 
+{
+    EXPECT_EQ(cov_tool::count_bytes(max_cov1, sizeof(max_cov1)), 4);
+    EXPECT_EQ(cov_tool::count_bytes(max_cov2, sizeof(max_cov2)), 3);
+    EXPECT_EQ(cov_tool::count_bytes(max_cov3, sizeof(max_cov3)), 5);
+    EXPECT_EQ(cov_tool::count_bytes(max_cov4, sizeof(max_cov4)), 3);
+    
+    cov_tool ct;
+    EXPECT_EQ(ct.is_max_cov_bytes(max_cov1, sizeof(max_cov1)), true);
+    EXPECT_EQ(ct.is_max_cov_bytes(max_cov2, sizeof(max_cov2)), false);
+    EXPECT_EQ(ct.is_max_cov_bytes(max_cov3, sizeof(max_cov3)), true);
+    EXPECT_EQ(ct.is_max_cov_bytes(max_cov4, sizeof(max_cov4)), false);
+}
+

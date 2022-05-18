@@ -218,6 +218,7 @@ bool inprocess_fuzzer::cov_check_by_hash(const uint8_t* data, uint32_t size,
 
         g_sanity_iteration++;
         
+        // ticks are needed by timeout only
         m_start_ticks = GetTickCount64();
 
         call_proc();
@@ -350,6 +351,8 @@ void inprocess_fuzzer::run_one_input(const uint8_t* data, uint32_t size,
                 m_stats.new_inc++;
                 should_add_to_corpus = true;
                 should_save_to_disk = true;
+            }
+            if (m_is_maxcov) {
             }
         }
     }

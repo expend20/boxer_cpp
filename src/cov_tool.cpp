@@ -17,6 +17,44 @@ bool operator!=(const XXH128_hash_t &x, const XXH128_hash_t &y)
     return std::tie(x.low64, x.high64) != std::tie(y.low64, y.high64);
 }
 
+uint32_t cov_tool::count_bytes(const uint8_t* cov, uint32_t sz)
+{
+    auto count_bytes = [](const uint8_t* p, uint32_t s) -> uint32_t {
+        uint32_t r = 0;
+        for (uint32_t i = 0; i < s; i++) {
+            if (p[i]) r++;
+        }
+        return r;
+    };
+    uint32_t res = 0;
+    uint32_t eights = sz / 8;
+    auto p_eights = (size_t*)cov;
+    for (size_t i = 0; i < eights; i++) {
+        if (p_eights[i]) {
+            res += count_bytes((const uint8_t*)&p_eights[i], 
+                    sizeof(p_eights[0]));
+        }
+    }
+    uint32_t eights_left = sz / 8;
+    if (eights_left) {
+        res += count_bytes((uint8_t*)&p_eights[eights], sizeof(p_eights[0]));
+    }
+    return res;
+}
+
+bool cov_tool::is_max_cov_bytes(const uint8_t* cov, uint32_t sz) 
+{
+    // We just check how many bytes (basicblocks) were hit and don't care
+    // about anything else
+    bool res = false;
+    auto n = count_bytes(cov, sz);
+    if (n > this->max_cov_bytes) {
+        this->max_cov_bytes = n;
+        res = true;
+    }
+    return res;
+}
+
 bool cov_tool::is_new_greater_byte(const uint8_t* cov, uint32_t sz) 
 {
     // if it's first run, shape the buffer
