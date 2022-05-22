@@ -601,6 +601,59 @@ extern "C" __declspec(dllexport) size_t WINAPIV
     return count;
 }
 
+extern "C" __declspec(dllexport) size_t WINAPIV
+    FuzzMe9(const char *data, unsigned int len)
+{
+    if (len < 10)
+        return 0;
+
+    char buf[10] = {0};
+    char bufok[10] = {0};
+    memset(bufok, '1', sizeof(bufok));
+    for (size_t i = 0; i < 10; i++) {
+        char c = data[i];
+        switch (c) {
+        case '1':
+            buf[0] = '1';
+            break;
+        case '2':
+            buf[1] = '1';
+            break;
+        case '3':
+            buf[2] = '1';
+            break;
+        case '4':
+            buf[3] = '1';
+            break;
+        case '5':
+            buf[4] = '1';
+            break;
+        case '6':
+            buf[5] = '1';
+            break;
+        case '7':
+            buf[6] = '1';
+            break;
+        case '8':
+            buf[7] = '1';
+            break;
+        case '9':
+            buf[8] = '1';
+            break;
+        case '0':
+            buf[9] = '1';
+            break;
+        }
+    }
+
+    if (!memcmp(buf, bufok, sizeof(buf))) {
+        crash();
+    }
+
+    return 0;
+}
+
+
 class TestClass {
   public:
     virtual void foo();

@@ -49,6 +49,7 @@ bool cov_tool::is_max_cov_bytes(const uint8_t* cov, uint32_t sz)
     bool res = false;
     auto n = count_bytes(cov, sz);
     if (n > this->max_cov_bytes) {
+        printf("n = %d\n", n);
         this->max_cov_bytes = n;
         res = true;
     }

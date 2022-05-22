@@ -92,6 +92,7 @@ class inprocess_fuzzer {
         cov_tool m_cov_bits_total;
         cov_tool m_cov_inc_total;
         cov_tool m_cov_cmp_total;
+        cov_tool m_cov_max_total;
 
         const char* m_input_corpus_path = 0;
         const char* m_output_corpus_path = 0;

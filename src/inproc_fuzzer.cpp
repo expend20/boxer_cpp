@@ -352,7 +352,10 @@ void inprocess_fuzzer::run_one_input(const uint8_t* data, uint32_t size,
                 should_add_to_corpus = true;
                 should_save_to_disk = true;
             }
-            if (m_is_maxcov) {
+            if (m_is_maxcov &&
+                    m_cov_max_total.is_max_cov_bytes(cov, cov_sz)) {
+                should_add_to_corpus = true;
+                should_save_to_disk = true;
             }
         }
     }

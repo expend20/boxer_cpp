@@ -11,6 +11,7 @@ enum AccTestCaseOption {
     HashCov = 1 << 2,
     StrcmpCov = 1 << 3,
     CmpCov = 1 << 4,
+    MaxCov = 1 << 5,
 };
 
 enum AccTestCaseResult {
@@ -30,6 +31,9 @@ std::map<std::string, uint32_t> g_crash_counts = {
 };
 
 AccTestCase AccTests[] = {
+    {"FuzzMe9", MaxCov, Crash},
+
+    /*
 #ifndef _WIN64
     {"FuzzMeSEH", CmpCov, Crash},
     {"FuzzMeCPPEH", CmpCov, Crash},
@@ -85,6 +89,7 @@ AccTestCase AccTests[] = {
     //{"FuzzMeSubStkReg", CmpCov | BitCov, Crash}, // TODO: implement in acctest
     //{"FuzzMeSubRelReg", CmpCov | BitCov, Crash}, // TODO: implement in acctest
     
+    */
 
 };
 
@@ -173,6 +178,9 @@ int main(int argc, const char** argv)
         }
         if (el.opts & HashCov) {
             inproc_fuzz.set_hashcov();
+        }
+        if (el.opts & MaxCov) {
+            inproc_fuzz.set_maxcov();
         }
         if (el.opts & StrcmpCov) {
             ins.install_strcmpcov();
