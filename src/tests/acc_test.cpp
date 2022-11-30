@@ -610,7 +610,7 @@ extern "C" __declspec(dllexport) size_t WINAPIV
     char buf[10] = {0};
     char bufok[10] = {0};
     memset(bufok, '1', sizeof(bufok));
-    for (size_t i = 0; i < 10; i++) {
+    for (size_t i = 0; i < len; i++) {
         char c = data[i];
         switch (c) {
         case '1':
@@ -774,17 +774,17 @@ extern "C" __declspec(dllexport) size_t WINAPIV
     FuzzMeCPPEH(const char *data, unsigned int len)
 {
     try {
-        //printf("Throwing CPPEH ...\n");
+        printf("Throwing CPPEH ...\n");
         DoNothing(1);
         throw MyException();
         DoNothing(2);
     }
     catch (MyException &e) {
-        //printf("In CPPEH handler\n");
+        printf("In CPPEH handler\n");
         DoNothing(3);
     }
 
-    //printf("The end of the function\n");
+    printf("The end of the function\n");
     if (*(size_t *)data == 0x37333331) {
         crash();
     }

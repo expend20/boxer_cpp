@@ -42,7 +42,7 @@ uint32_t cov_tool::count_bytes(const uint8_t* cov, uint32_t sz)
     return res;
 }
 
-bool cov_tool::is_max_cov_bytes(const uint8_t* cov, uint32_t sz) 
+bool cov_tool::update_if_max(const uint8_t* cov, uint32_t sz) 
 {
     // We just check how many bytes (basicblocks) were hit and don't care
     // about anything else

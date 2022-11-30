@@ -80,9 +80,9 @@ TEST(cov_tool, max_check)
     EXPECT_EQ(cov_tool::count_bytes(max_cov4, sizeof(max_cov4)), 3);
     
     cov_tool ct;
-    EXPECT_EQ(ct.is_max_cov_bytes(max_cov1, sizeof(max_cov1)), true);
-    EXPECT_EQ(ct.is_max_cov_bytes(max_cov2, sizeof(max_cov2)), false);
-    EXPECT_EQ(ct.is_max_cov_bytes(max_cov3, sizeof(max_cov3)), true);
-    EXPECT_EQ(ct.is_max_cov_bytes(max_cov4, sizeof(max_cov4)), false);
+    EXPECT_EQ(ct.update_if_max(max_cov1, sizeof(max_cov1)), true);
+    EXPECT_EQ(ct.update_if_max(max_cov2, sizeof(max_cov2)), false);
+    EXPECT_EQ(ct.update_if_max(max_cov3, sizeof(max_cov3)), true);
+    EXPECT_EQ(ct.update_if_max(max_cov4, sizeof(max_cov4)), false);
 }
 

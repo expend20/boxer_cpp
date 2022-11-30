@@ -18,10 +18,15 @@ class cov_tool {
         bool is_new_cov_hash(XXH128_hash_t h, bool modify_state = true);
         bool is_new_cov_bits(const uint8_t* cov, uint32_t sz);
         bool is_new_greater_byte(const uint8_t* cov, uint32_t sz);
-        bool is_max_cov_bytes(const uint8_t* cov, uint32_t sz);
+        bool update_if_max(const uint8_t* cov, uint32_t sz);
         void add_hash(XXH128_hash_t h);
         size_t hashes_size(){ return m_cov_bits_hashes.size(); };
-        void clear(){ m_cov_bits.clear(); m_cov_bits_hashes.clear(); };
+        void clear(){ 
+            m_cov_bits.clear(); 
+            m_cov_bits_hashes.clear(); 
+            max_cov_bytes = 0;
+        };
+        size_t get_max_cov_count() { return this->max_cov_bytes; };
 
     private:
         std::vector<uint8_t> m_cov_bits;

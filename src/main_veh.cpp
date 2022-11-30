@@ -91,7 +91,7 @@ int main(int argc, const char** argv)
 
     auto is_deterministic = GetBinaryOption("--deterministic", argc, argv,
             false);
-    if (is_deterministic)
+    if (!is_deterministic)
         srand(__rdtsc());
     SAY_INFO("dterministric = %d\n", is_deterministic);
 
@@ -179,7 +179,7 @@ int main(int argc, const char** argv)
     }
     SAY_INFO("timeout_v = %d\n", timeout_v);
 
-    uint32_t zero_corp_sample_size_val = 512;
+    uint32_t zero_corp_sample_size_val = 2048;
     auto zero_corp_sample_size = GetOption("--zero_corp_sample_size", 
             argc, argv);
     if (zero_corp_sample_size) {
@@ -187,7 +187,7 @@ int main(int argc, const char** argv)
     }
     SAY_INFO("zero_corp_sample_size = %d\n", zero_corp_sample_size_val);
 
-    uint32_t mutator_density_val = 256;
+    uint32_t mutator_density_val = 512;
     auto mutator_density = GetOption("--mutator_density", argc, argv);
     if (mutator_density) {
         mutator_density_val = atoi(mutator_density);

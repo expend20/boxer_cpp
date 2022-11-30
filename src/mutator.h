@@ -41,6 +41,13 @@ class mutator {
         size_t get_corpus_size(){ return m_corpus.size(); };
         std::vector<uint8_t> get_random_sample();
         mutator_options clone_opts(){ return m_opts; };
+        void clear() { 
+            m_cached_sample_idx = -1;
+            m_ticker->reset();
+            m_corpus.clear();
+            m_mutation_stats.clear();
+            printf("mutator cleared\n");
+        };
 
     private:
         void update_index_democratic();

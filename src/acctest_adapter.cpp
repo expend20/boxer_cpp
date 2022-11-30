@@ -31,7 +31,7 @@ std::map<std::string, uint32_t> g_crash_counts = {
 };
 
 AccTestCase AccTests[] = {
-    {"FuzzMe9", MaxCov, Crash},
+    {"FuzzMe9", CmpCov, Crash},
 
     /*
 #ifndef _WIN64

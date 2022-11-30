@@ -166,7 +166,8 @@ void inprocess_fuzzer::print_stats(bool force)
                 "%8llu:%02llu:%02llu from start\n"
                 "%10llu (%llu) crashes, %10llu timeouts, %10llu total execs, "
                 " %10llu new execs\n"
-                "%10lu stable cov, %10llu unstable cov, %10llu cmpcov bits\n"
+                "%10lu stable cov, %10llu unstable cov, %10llu cmpcov bits "
+                "%10lu max_cov\n"
                 "%10llu strcmp %10u mutator corp\n",
                 fcps,
                 (double)m_stats.execs / (m_print_stats_count * 
@@ -177,6 +178,7 @@ void inprocess_fuzzer::print_stats(bool force)
                 m_stats.execs, newExecs,
                 m_cov_bits_total.hashes_size(), m_stats.unstable_cov, 
                 m_stats.cmpcov_bits,
+                m_cov_max_total.get_max_cov_count(),
                 m_stats.strcmp, m_mutator.get_corpus_size()
                 );
         m_inst->print_stats();
@@ -332,30 +334,50 @@ void inprocess_fuzzer::run_one_input(const uint8_t* data, uint32_t size,
 
     if (is_unstable) return;
 
+    bool is_maximizing = false;
+    size_t max_count_prev = m_cov_max_total.get_max_cov_count();
+    bool going_backwards = false;
+
     if (new_hash_by_bits) {
-        if (m_is_hashcov) {
+        uint32_t cov_sz = 0;
+        uint8_t* cov = 0;
+        cov = m_inst->get_cov(&cov_sz);
+        if (m_is_maxcov &&
+                m_cov_max_total.update_if_max(cov, cov_sz)) {
+            m_mutator.clear();
+            is_maximizing = true;
             should_add_to_corpus = true;
+            should_save_to_disk = true;
+            if (m_is_bitcov) {
+                m_cov_bits_total.clear();
+                m_cov_bits_total.is_new_cov_bits(cov, cov_sz);
+            }
+            if (m_is_inccov) {
+                m_cov_inc_total.clear();
+                m_cov_inc_total.is_new_greater_byte(cov, cov_sz);
+            }
+            m_stats.new_bits = 0;
+            m_stats.new_inc = 0;
         }
         else {
-            uint32_t cov_sz = 0;
-            uint8_t* cov = 0;
-            cov = m_inst->get_cov(&cov_sz);
-            if (m_is_bitcov && 
+            if (m_is_maxcov && 
+                    max_count_prev < m_cov_max_total.get_max_cov_count()) {
+                going_backwards = true;
+            }
+            if (m_is_bitcov && !going_backwards &&
                     m_cov_bits_total.is_new_cov_bits(cov, cov_sz)) {
                 m_stats.new_bits++;
                 should_add_to_corpus = true;
                 should_save_to_disk = true;
             }
-            if (m_is_inccov &&
+            if (m_is_inccov && !going_backwards &&
                     m_cov_inc_total.is_new_greater_byte(cov, cov_sz)) {
                 m_stats.new_inc++;
                 should_add_to_corpus = true;
                 should_save_to_disk = true;
             }
-            if (m_is_maxcov &&
-                    m_cov_max_total.is_max_cov_bytes(cov, cov_sz)) {
+            if (m_is_hashcov && !going_backwards) {
                 should_add_to_corpus = true;
-                should_save_to_disk = true;
             }
         }
     }
@@ -368,13 +390,28 @@ void inprocess_fuzzer::run_one_input(const uint8_t* data, uint32_t size,
     // thus we can use hash to speed up the process
     if (cmpcov_sz) {
         auto h = cov_tool::get_cov_hash(cmpcov, cmpcov_sz);
-        if (m_cov_cmp_total.is_new_cov_hash(h)) {
-            m_stats.cmpcov_bits++;
-            should_add_to_corpus = true;
-            should_save_to_disk = true;
+        // if we're in maximizing stage, we need to clean cmp coverage and
+        // save current one as a base one
+        if (is_maximizing) {
+            m_stats.cmpcov_bits = 1;
+            m_cov_cmp_total.clear();
+            m_cov_cmp_total.is_new_cov_hash(h);
+        }
+        else {
+            if (m_cov_cmp_total.is_new_cov_hash(h)) {
+                if (going_backwards) {
+                    // we're going backwards here
+                }
+                else {
+                    m_stats.cmpcov_bits++;
+                    should_add_to_corpus = true;
+                    should_save_to_disk = true;
+                }
 
-            // clear passed cmp cases
-            m_inst->clear_passed_cmpcov_code();
+                // clear passed cmp cases
+                // TODO: do we really need this?
+                // m_inst->clear_passed_cmpcov_code();
+            }
         }
     }
 
